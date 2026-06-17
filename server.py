@@ -1079,10 +1079,10 @@ async def chat_completions(req: ChatCompletionRequest, authorization: Optional[s
                 sess = login_mgr.get_pinned(account.id) if login_mgr else None
                 is_tmp = False
                 if sess is None:
-                    # 创建临时会话（cookie 含 cf_clearance 可过 Cloudflare）
+                    # 创建临时会话：跳过初始登录页导航，直接设 cookie 后跳 dashboard
                     tmp_sid = uuid.uuid4().hex[:10]
                     try:
-                        sess = await login_mgr.create(tmp_sid, base_url=config.gitlab_base_url)
+                        sess = await login_mgr.create(tmp_sid, base_url=config.gitlab_base_url, skip_nav=True)
                         is_tmp = True
                     except Exception as e:
                         last_error = f"创建浏览器会话失败: {e}"
