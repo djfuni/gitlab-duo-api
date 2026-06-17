@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+*.egg-info/
+
+# Runtime data (contains secrets!)
+accounts.json
+api_keys.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Research artifacts (keep in repo for reference)
+# research/ is commited
+
+# Test / debug scripts
+*_test.py

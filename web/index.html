@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitLab Duo Proxy · 控制台</title>
+<style>
+  :root {
+    --bg: #F5F4ED;
+    --surface: #FFFFFF;
+    --surface-2: #FAF9F5;
+    --surface-3: #F0EFE8;
+    --border: #E5E4DD;
+    --border-strong: #D8D6CC;
+    --text: #1F1E1D;
+    --text-muted: #6B6A65;
+    --text-faint: #9C9B94;
+    --accent: #D97757;
+    --accent-hover: #C45B3D;
+    --accent-soft: #F7EAE2;
+    --success: #4F8A5B;
+    --success-soft: #E8F1EA;
+    --warning: #B8860B;
+    --warning-soft: #F5EED9;
+    --danger: #C75450;
+    --danger-soft: #F6E6E5;
+    --info: #4A6FA5;
+    --info-soft: #E8EEF5;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(31,30,29,.06), 0 1px 2px rgba(31,30,29,.04);
+    --shadow-lg: 0 8px 24px rgba(31,30,29,.10), 0 2px 6px rgba(31,30,29,.06);
+    --serif: "Iowan Old Style", "Palatino Linotype", "URW Palladio L", P052, Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---- Layout ---- */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 248px; flex-shrink: 0;
+    background: var(--surface-2);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 18px 14px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 18px; }
+  .brand-dot { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; box-shadow: 0 2px 6px rgba(217,119,87,.4); }
+  .brand-name { font-family: var(--serif); font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .brand-sub { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
+  .nav { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px;
+    padding: 9px 12px; border-radius: var(--radius-sm);
+    color: var(--text-muted); font-weight: 500; font-size: 13.5px;
+    transition: all .12s; text-align: left; width: 100%;
+  }
+  .nav-item:hover { background: var(--surface-3); color: var(--text); }
+  .nav-item.active { background: var(--accent-soft); color: var(--accent-hover); font-weight: 600; }
+  .nav-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+  .nav-spacer { flex: 1; }
+  .sidebar-footer { font-size: 11px; color: var(--text-faint); padding: 10px 8px 0; border-top: 1px solid var(--border); margin-top: 10px; }
+
+  .main { flex: 1; min-width: 0; overflow-y: auto; }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 32px; border-bottom: 1px solid var(--border);
+    background: var(--bg); position: sticky; top: 0; z-index: 10;
+  }
+  .topbar h1 { font-family: var(--serif); font-size: 21px; font-weight: 600; letter-spacing: -.01em; }
+  .topbar-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .topbar-actions { display: flex; align-items: center; gap: 10px; }
+  .status-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); padding: 5px 11px; border-radius: 20px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+  .status-dot.off { background: var(--text-faint); }
+
+  .content { padding: 26px 32px 60px; max-width: 1180px; }
+
+  /* ---- Cards & stats ---- */
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+  .stat-label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .stat-value { font-family: var(--serif); font-size: 30px; font-weight: 600; margin-top: 6px; letter-spacing: -.02em; }
+  .stat-sub { font-size: 11.5px; color: var(--text-faint); margin-top: 3px; }
+  .stat-card.accent .stat-value { color: var(--accent); }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 20px; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid var(--border); }
+  .panel-head h2 { font-family: var(--serif); font-size: 16px; font-weight: 600; }
+  .panel-body { padding: 18px 20px; }
+  .panel-actions { display: flex; gap: 8px; }
+
+  /* ---- Buttons ---- */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; transition: all .12s; border: 1px solid transparent; white-space: nowrap; }
+  .btn svg { width: 14px; height: 14px; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-ghost { background: var(--surface); border-color: var(--border-strong); color: var(--text); }
+  .btn-ghost:hover { background: var(--surface-3); }
+  .btn-danger { background: var(--surface); border-color: var(--danger); color: var(--danger); }
+  .btn-danger:hover { background: var(--danger-soft); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-icon { padding: 6px; border-radius: var(--radius-sm); }
+  .btn-icon:hover { background: var(--surface-3); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---- Table ---- */
+  .table { width: 100%; border-collapse: collapse; }
+  .table th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .table td { padding: 13px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+  .table tr:last-child td { border-bottom: none; }
+  .table tr:hover td { background: var(--surface-2); }
+  .acc-name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .acc-name .id { font-family: var(--mono); font-size: 11px; color: var(--text-faint); font-weight: 400; }
+  .acc-auth { font-family: var(--mono); font-size: 11.5px; color: var(--text-muted); }
+  .acc-note { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 20px; font-size: 11.5px; font-weight: 600; }
+  .badge-active { background: var(--success-soft); color: var(--success); }
+  .badge-cooldown { background: var(--warning-soft); color: var(--warning); }
+  .badge-disabled { background: var(--surface-3); color: var(--text-faint); }
+  .badge-invalid { background: var(--danger-soft); color: var(--danger); }
+  .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  .tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; background: var(--surface-3); color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
+
+  .mini-stats { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+  .mini-stats b { color: var(--text); font-weight: 600; }
+
+  .row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+
+  .empty { padding: 40px 20px; text-align: center; color: var(--text-faint); }
+  .empty svg { width: 38px; height: 38px; opacity: .4; margin-bottom: 10px; }
+
+  /* ---- Forms ---- */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 5px; }
+  .field label .req { color: var(--danger); }
+  .input, .select, textarea.input {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+    transition: border-color .12s, box-shadow .12s; font-size: 13px;
+  }
+  .input:focus, .select:focus, textarea.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  textarea.input { resize: vertical; min-height: 80px; font-family: var(--mono); font-size: 12px; }
+  .hint { font-size: 11.5px; color: var(--text-faint); margin-top: 4px; }
+
+  /* ---- Modal ---- */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(31,30,29,.35); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .modal { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-lg); width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); }
+  .modal-head h3 { font-family: var(--serif); font-size: 17px; font-weight: 600; }
+  .modal-body { padding: 20px 22px; }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 14px 14px; }
+
+  /* ---- Chat ---- */
+  .chat-wrap { display: flex; flex-direction: column; height: calc(100vh - 130px); }
+  .chat-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .chat-controls .select { width: auto; min-width: 180px; }
+  .chat-messages { flex: 1; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
+  .msg { margin-bottom: 22px; display: flex; gap: 12px; }
+  .msg-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; }
+  .msg-user .msg-avatar { background: var(--info); }
+  .msg-ai .msg-avatar { background: var(--accent); }
+  .msg-body { flex: 1; min-width: 0; }
+  .msg-role { font-size: 11.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  .msg-content { font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-wrap: break-word; }
+  .msg-content code { font-family: var(--mono); font-size: 12.5px; background: var(--surface-3); padding: 1px 5px; border-radius: 3px; }
+  .msg-error { color: var(--danger); }
+  .msg-cursor { display: inline-block; width: 7px; height: 15px; background: var(--accent); vertical-align: text-bottom; animation: blink 1s steps(2) infinite; border-radius: 1px; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .chat-empty { text-align: center; color: var(--text-faint); padding: 50px 20px; }
+  .chat-empty svg { width: 40px; height: 40px; opacity: .4; margin-bottom: 10px; }
+  .chat-input { margin-top: 12px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; align-items: flex-end; padding: 10px 12px; gap: 10px; }
+  .chat-input textarea { flex: 1; border: none; resize: none; outline: none; background: transparent; font-size: 14px; line-height: 1.5; max-height: 140px; min-height: 24px; padding: 4px 0; }
+  .chat-input .send-btn { background: var(--accent); color: #fff; border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; justify-content: center; transition: background .12s; }
+  .chat-input .send-btn:hover { background: var(--accent-hover); }
+  .chat-input .send-btn:disabled { background: var(--text-faint); }
+  .chat-input .send-btn svg { width: 18px; height: 18px; }
+
+  /* ---- Toast ---- */
+  .toast-wrap { position: fixed; bottom: 24px; right: 24px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+  .toast { background: var(--surface); border: 1px solid var(--border-strong); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 11px 16px; box-shadow: var(--shadow-lg); font-size: 13px; min-width: 240px; max-width: 360px; animation: slideIn .2s ease; }
+  .toast.success { border-left-color: var(--success); }
+  .toast.error { border-left-color: var(--danger); }
+  .toast.warn { border-left-color: var(--warning); }
+  @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ---- Login ---- */
+  .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+  .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 36px 34px; width: 100%; max-width: 380px; text-align: center; }
+  .login-logo { width: 52px; height: 52px; border-radius: 50%; background: var(--accent); display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 24px; margin-bottom: 16px; box-shadow: 0 4px 14px rgba(217,119,87,.4); }
+  .login-card h1 { font-family: var(--serif); font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .login-card p { font-size: 13px; color: var(--text-muted); margin-bottom: 22px; }
+  .login-card .input { margin-bottom: 14px; text-align: center; }
+
+  .hidden { display: none !important; }
+  .spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-row { padding: 30px; text-align: center; color: var(--text-faint); }
+
+  /* ---- Browser Login Modal ---- */
+  .brw-overlay { position: fixed; inset: 0; background: rgba(31,30,29,.5); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 150; padding: 20px; }
+  .brw-modal { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-lg); width: 100%; max-width: 1080px; height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+  .brw-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .brw-head .title { display: flex; align-items: center; gap: 10px; }
+  .brw-head .title h3 { font-family: var(--serif); font-size: 16px; font-weight: 600; }
+  .brw-status { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+  .brw-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+  .brw-status.live .dot { background: var(--success); animation: pulse 1.5s infinite; }
+  .brw-status.win .dot { background: var(--success); }
+  @keyframes pulse { 50% { opacity: .4; } }
+  .brw-body { flex: 1; display: flex; min-height: 0; }
+  .brw-screen { flex: 1; min-width: 0; background: #2b2b2b; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .brw-screen img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: crosshair; user-select: none; -webkit-user-drag: none; }
+  .brw-screen.loading::after { content: '正在启动浏览器…'; position: absolute; color: #fff; font-size: 14px; }
+  .brw-screen.loading img { display: none; }
+  .brw-urlbar { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.65); color: #fff; font-size: 11px; padding: 4px 12px; border-radius: 12px; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+  .brw-side { width: 280px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 16px; overflow-y: auto; background: var(--surface-2); }
+  .brw-side h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
+  .brw-side .hint-box { font-size: 12px; color: var(--text-muted); line-height: 1.6; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 14px; }
+  .brw-side .hint-box b { color: var(--text); }
+  .brw-input-row { display: flex; gap: 6px; margin-bottom: 10px; }
+  .brw-input-row .input { flex: 1; font-size: 12px; padding: 7px 10px; }
+  .brw-keys { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+  .brw-keys .btn { padding: 5px 9px; font-size: 11.5px; }
+  .brw-login-banner { background: var(--success-soft); border: 1px solid var(--success); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12.5px; color: var(--success); margin-bottom: 12px; display: none; }
+  .brw-login-banner.show { display: block; }
+  .brw-save-form { display: none; }
+  .brw-save-form.show { display: block; }
+  .brw-save-form .field { margin-bottom: 10px; }
+  .brw-save-form label { font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px; }
+  .brw-foot { display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--surface-2); }
+
+  @media (max-width: 900px) {
+    .sidebar { width: 64px; } .brand-name, .brand-sub, .nav-item span, .sidebar-footer { display: none; }
+    .stats-grid { grid-template-columns: 1fr 1fr; } .form-grid { grid-template-columns: 1fr; }
+    .content { padding: 18px; } .topbar { padding: 14px 18px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Login View -->
+<div id="loginView" class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo">G</div>
+    <h1>GitLab Duo Proxy</h1>
+    <p>账号池控制台 · 请输入访问令牌</p>
+    <input type="password" id="loginToken" class="input" placeholder="WebUI Token" autofocus>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px;" onclick="doLogin()">登 录</button>
+    <p class="hint" style="margin-top:14px;">令牌在服务启动日志中查看，或由 config.yaml 的 <code>pool.webui_token</code> 指定</p>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="appView" class="app hidden">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-dot">G</div>
+      <div>
+        <div class="brand-name">Duo Proxy</div>
+        <div class="brand-sub">Account Pool Console</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-view="accounts" onclick="switchView('accounts')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>账号池</span>
+      </button>
+      <button class="nav-item" data-view="chat" onclick="switchView('chat')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>对话测试</span>
+      </button>
+      <button class="nav-item" data-view="settings" onclick="switchView('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>池设置</span>
+      </button>
+      <button class="nav-item" data-view="apikeys" onclick="switchView('apikeys')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        <span>API 密钥</span>
+      </button>
+    </nav>
+    <div class="nav-spacer"></div>
+    <button class="nav-item" onclick="logout()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span>退出登录</span>
+    </button>
+    <div class="sidebar-footer">v2.0 · OpenAI 兼容</div>
+  </aside>
+
+  <main class="main">
+    <!-- Accounts View -->
+    <section id="view-accounts">
+      <div class="topbar">
+        <div>
+          <h1>账号池</h1>
+          <div class="topbar-sub">管理多个 GitLab 账号，自动轮询调度与故障切换</div>
+        </div>
+        <div class="topbar-actions">
+          <span class="status-pill"><span class="status-dot" id="poolStatusDot"></span><span id="poolStatusText">就绪</span></span>
+          <button class="btn btn-ghost" onclick="openBrowserLogin()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>
+            浏览器登录
+          </button>
+          <button class="btn btn-primary" onclick="openAddModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            手动添加
+          </button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">账号总数</div><div class="stat-value" id="stTotal">0</div><div class="stat-sub" id="stActive">活跃 0</div></div>
+          <div class="stat-card"><div class="stat-label">总请求数</div><div class="stat-value" id="stReq">0</div><div class="stat-sub" id="stInflight">进行中 0</div></div>
+          <div class="stat-card accent"><div class="stat-label">成功率</div><div class="stat-value" id="stRate">0%</div><div class="stat-sub" id="stSuccFail">成功 0 · 失败 0</div></div>
+          <div class="stat-card"><div class="stat-label">当前策略</div><div class="stat-value" id="stStrategy" style="font-size:20px;text-transform:capitalize;">轮询</div><div class="stat-sub" id="stCooldown">冷却秒数 60</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>账号列表</h2>
+            <div class="panel-actions">
+              <button class="btn btn-ghost btn-sm" onclick="refreshAccounts()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                刷新
+              </button>
+            </div>
+          </div>
+          <div id="accountsTable" class="panel-body" style="padding:0;">
+            <div class="loading-row"><span class="spinner"></span> 加载中…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chat View -->
+    <section id="view-chat" class="hidden">
+      <div class="topbar">
+        <div>
+          <h1>对话测试</h1>
+          <div class="topbar-sub">通过账号池发起流式对话，验证端到端可用性</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-ghost btn-sm" onclick="clearChat()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            清空
+          </button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="chat-wrap">
+          <div class="chat-controls">
+            <label style="font-size:12px;color:var(--text-muted);font-weight:600;">模型</label>
+            <select id="chatModel" class="select"></select>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);">
+              <input type="checkbox" id="chatStream" checked> 流式
+            </label>
+          </div>
+          <div id="chatMessages" class="chat-messages">
+            <div class="chat-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <div>开始一段对话，消息将通过账号池自动选择账号发送</div>
+            </div>
+          </div>
+          <div class="chat-input">
+            <textarea id="chatInput" placeholder="发送消息…  (Enter 发送，Shift+Enter 换行)" rows="1"></textarea>
+            <button class="send-btn" id="sendBtn" onclick="sendChat()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings View -->
+    <section id="view-settings" class="hidden">
+      <div class="topbar">
+        <div>
+          <h1>池设置</h1>
+          <div class="topbar-sub">调度策略、冷却与重试参数</div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="panel">
+          <div class="panel-head"><h2>调度配置</h2></div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="field">
+                <label>调度策略</label>
+                <select id="cfgStrategy" class="select">
+                  <option value="round_robin">轮询 (round_robin)</option>
+                  <option value="random">随机 (random)</option>
+                  <option value="least_used">最少使用 (least_used)</option>
+                </select>
+                <div class="hint">账号池选取下一个可用账号的方式</div>
+              </div>
+              <div class="field">
+                <label>冷却秒数</label>
+                <input id="cfgCooldown" type="number" min="5" class="input" value="60">
+                <div class="hint">账号失败后进入冷却的时间</div>
+              </div>
+              <div class="field">
+                <label>最大连续失败次数</label>
+                <input id="cfgMaxFail" type="number" min="1" class="input" value="3">
+                <div class="hint">达到此次数后账号进入冷却</div>
+              </div>
+              <div class="field">
+                <label>单请求重试次数</label>
+                <input id="cfgRetry" type="number" min="1" class="input" value="3">
+                <div class="hint">发送失败时最多切换多少个账号</div>
+              </div>
+              <div class="field full">
+                <label>认证错误处理</label>
+                <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
+                  <input type="checkbox" id="cfgInvalidAuth"> 遇到 401/403 时直接标记账号为 invalid（而非仅冷却）
+                </label>
+              </div>
+            </div>
+            <div style="margin-top:16px;display:flex;gap:8px;">
+              <button class="btn btn-primary" onclick="saveSettings()">保存配置</button>
+              <button class="btn btn-ghost" onclick="loadSettings()">重置</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>服务信息</h2></div>
+          <div class="panel-body" id="svcInfo" style="font-size:13px;line-height:1.9;">
+            <div class="loading-row"><span class="spinner"></span> 加载中…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- API Keys View -->
+    <section id="view-apikeys" class="hidden">
+      <div class="topbar">
+        <div>
+          <h1>API 密钥</h1>
+          <div class="topbar-sub">生成密钥接入 OpenWebUI、ChatBox 等客户端，格式兼容 OpenAI</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-primary" onclick="genApiKey()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            生成密钥
+          </button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="panel">
+          <div class="panel-head"><h2>密钥列表</h2></div>
+          <div id="apiKeysTable" class="panel-body" style="padding:0;">
+            <div class="loading-row"><span class="spinner"></span> 加载中…</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>接入示例</h2></div>
+          <div class="panel-body" id="apiExample" style="font-size:13px;line-height:1.9;">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">使用 OpenAI SDK 或任意兼容客户端，API 地址和密钥如下：</div>
+            <div style="background:var(--surface-3);border-radius:var(--radius-sm);padding:12px 16px;font-family:var(--mono);font-size:12px;overflow-x:auto;">
+<div style="color:var(--text-faint);"># Base URL</div>
+<div>API_BASE = http://103.231.56.210:8088/v1</div>
+<div style="color:var(--text-faint);margin-top:8px;"># API Key (在此页面生成)</div>
+<div>API_KEY = sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</div>
+<div style="color:var(--text-faint);margin-top:8px;"># curl 示例</div>
+<div>curl <span id="exampleHost" style="color:var(--accent);">http://103.231.56.210:8088</span>/v1/chat/completions \</div>
+<div>  -H "Authorization: Bearer $API_KEY" \</div>
+<div>  -H "Content-Type: application/json" \</div>
+<div>  -d '{"model":"claude-opus-4.8","messages":[{"role":"user","content":"hello"}]}'</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Modal -->
+<div id="modalRoot"></div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- Browser Login Modal -->
+<div id="brwOverlay" class="brw-overlay hidden">
+  <div class="brw-modal">
+    <div class="brw-head">
+      <div class="title">
+        <div class="brand-dot" style="width:24px;height:24px;font-size:13px;">G</div>
+        <h3>浏览器登录 GitLab</h3>
+      </div>
+      <div class="brw-status" id="brwStatus"><span class="dot"></span><span id="brwStatusText">未连接</span></div>
+    </div>
+    <div class="brw-body">
+      <div class="brw-screen loading" id="brwScreen">
+        <div class="brw-urlbar hidden" id="brwUrlbar"></div>
+        <img id="brwImg" alt="browser stream" onmousedown="brwClick(event)" oncontextmenu="event.preventDefault()">
+      </div>
+      <div class="brw-side">
+        <div class="hint-box">
+          <b>使用说明</b><br>
+          1. 在左侧画面里点击 GitLab 的用户名/密码输入框<br>
+          2. 在下方「输入文本」框打字，点「发送」填入<br>
+          3. 点击「Sign in」按钮登录<br>
+          4. 登录成功后下方会出现「保存到账号池」
+        </div>
+
+        <h4>输入文本</h4>
+        <div class="brw-input-row">
+          <input id="brwTextInput" class="input" placeholder="输入文字后点发送" onkeydown="if(event.key==='Enter'){brwSendText();}">
+          <button class="btn btn-primary btn-sm" onclick="brwSendText()">发送</button>
+        </div>
+
+        <h4>快捷按键</h4>
+        <div class="brw-keys">
+          <button class="btn btn-ghost" onclick="brwKey('Enter')">Enter</button>
+          <button class="btn btn-ghost" onclick="brwKey('Tab')">Tab</button>
+          <button class="btn btn-ghost" onclick="brwKey('Backspace')">⌫</button>
+          <button class="btn btn-ghost" onclick="brwKey('Escape')">Esc</button>
+          <button class="btn btn-ghost" onclick="brwScroll(0,-300)">↑</button>
+          <button class="btn btn-ghost" onclick="brwScroll(0,300)">↓</button>
+          <button class="btn btn-ghost" onclick="brwReload()">刷新</button>
+        </div>
+
+        <div class="brw-login-banner" id="brwLoginBanner">
+          ✓ 检测到登录成功！请在下方填写账号名称并保存。
+        </div>
+
+        <div class="brw-save-form" id="brwSaveForm">
+          <h4>保存到账号池</h4>
+          <div class="field">
+            <label>账号名称</label>
+            <input id="brwAccName" class="input" placeholder="如：主账号">
+          </div>
+          <button class="btn btn-primary" style="width:100%;justify-content:center;" id="brwSaveBtn" onclick="brwSaveAccount()">保存账号</button>
+        </div>
+      </div>
+    </div>
+    <div class="brw-foot">
+      <span style="font-size:11.5px;color:var(--text-faint);">画面通过后端 Playwright 实时串流，密码不经过前端持久化</span>
+      <button class="btn btn-ghost" onclick="closeBrowserLogin()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';  // same origin
+let TOKEN = localStorage.getItem('duo_webui_token') || '';
+let currentView = 'accounts';
+let models = [];
+
+/* ---------- Auth ---------- */
+function doLogin() {
+  const v = document.getElementById('loginToken').value.trim();
+  if (!v) return toast('请输入令牌', 'error');
+  TOKEN = v;
+  // verify
+  fetchJson('/v1/accounts/pool/summary').then(r => {
+    localStorage.setItem('duo_webui_token', TOKEN);
+    enterApp();
+  }).catch(e => {
+    TOKEN = ''; localStorage.removeItem('duo_webui_token');
+    toast('令牌无效: ' + (e.message||e), 'error');
+  });
+}
+function logout() {
+  TOKEN = ''; localStorage.removeItem('duo_webui_token');
+  location.reload();
+}
+function enterApp() {
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('appView').classList.remove('hidden');
+  switchView('accounts');
+}
+
+/* ---------- Fetch helpers ---------- */
+async function fetchJson(path, opts={}) {
+  const headers = { 'X-WebUI-Token': TOKEN, 'Content-Type': 'application/json', ...(opts.headers||{}) };
+  const res = await fetch(API + path, { ...opts, headers });
+  if (res.status === 401) { logout(); throw new Error('未授权'); }
+  const txt = await res.text();
+  let data; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt }; }
+  if (!res.ok) throw new Error(data.detail || data.raw || ('HTTP '+res.status));
+  return data;
+}
+
+function toast(msg, type='info') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  document.getElementById('toastWrap').appendChild(el);
+  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),300); }, 3200);
+}
+
+/* ---------- View switching ---------- */
+function switchView(v) {
+  currentView = v;
+  document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view===v));
+  document.querySelectorAll('section[id^="view-"]').forEach(s => s.classList.add('hidden'));
+  document.getElementById('view-'+v).classList.remove('hidden');
+  if (v==='accounts') refreshAccounts();
+  if (v==='settings') loadSettings();
+  if (v==='chat') loadModels();
+  if (v==='apikeys') refreshApiKeys();
+}
+
+/* ---------- Accounts ---------- */
+async function refreshAccounts() {
+  try {
+    const [list, summary, cfg] = await Promise.all([
+      fetchJson('/v1/accounts/pool'),
+      fetchJson('/v1/accounts/pool/summary'),
+      fetchJson('/v1/accounts/pool/config'),
+    ]);
+    renderStats(summary, cfg);
+    renderAccounts(list.accounts||[]);
+  } catch(e) { toast('加载失败: '+(e.message||e), 'error'); }
+}
+
+function renderStats(s, c) {
+  document.getElementById('stTotal').textContent = s.total_accounts||0;
+  const active = (s.by_status||{}).active||0;
+  document.getElementById('stActive').textContent = '活跃 ' + active;
+  document.getElementById('stReq').textContent = s.total_requests||0;
+  document.getElementById('stInflight').textContent = '进行中 ' + (s.in_flight||0);
+  document.getElementById('stRate').textContent = (s.success_rate||0) + '%';
+  document.getElementById('stSuccFail').textContent = '成功 ' + (s.total_success||0) + ' · 失败 ' + (s.total_failure||0);
+  const strat = c.strategy||'round_robin';
+  const map = {round_robin:'轮询', random:'随机', least_used:'最少使用'};
+  document.getElementById('stStrategy').textContent = map[strat]||strat;
+  document.getElementById('stCooldown').textContent = '冷却秒数 ' + (c.cooldown_seconds||60);
+  const dot = document.getElementById('poolStatusDot');
+  const txt = document.getElementById('poolStatusText');
+  if ((s.total_accounts||0)===0) { dot.classList.add('off'); txt.textContent='空池'; }
+  else { dot.classList.remove('off'); txt.textContent = active>0 ? '运行中' : '全部不可用'; }
+}
+
+function statusBadge(acc) {
+  let st = acc.status;
+  if (!acc.enabled) st = 'disabled';
+  else if (acc.status==='cooldown') st='cooldown';
+  else if (acc.status==='invalid') st='invalid';
+  else st='active';
+  const labels = {active:'活跃', cooldown:'冷却中', disabled:'已禁用', invalid:'已失效'};
+  return `<span class="badge badge-${st}"><span class="badge-dot"></span>${labels[st]}</span>`;
+}
+
+function fmtTs(t) { if(!t) return '—'; const d=new Date(t*1000); return d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+function fmtRel(t) { if(!t) return '从未'; const s=Date.now()/1000-t; if(s<60)return Math.floor(s)+'秒前'; if(s<3600)return Math.floor(s/60)+'分前'; if(s<86400)return Math.floor(s/3600)+'小时前'; return Math.floor(s/86400)+'天前'; }
+
+function renderAccounts(accs) {
+  const box = document.getElementById('accountsTable');
+  if (!accs.length) {
+    box.innerHTML = `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><div>还没有账号，点击右上角「添加账号」开始</div></div>`;
+    return;
+  }
+  box.innerHTML = `<table class="table"><thead><tr>
+    <th>账号</th><th>认证</th><th>状态</th><th>调用统计</th><th>最近使用</th><th style="text-align:right;">操作</th>
+  </tr></thead><tbody>${accs.map(a=>`
+    <tr>
+      <td><div class="acc-name">${esc(a.name)} <span class="id">${a.id}</span></div>${a.note?`<div class="acc-note">${esc(a.note)}</div>`:''}</td>
+      <td><span class="tag">${esc(a.auth_type)}</span><div class="acc-auth">${esc(a.auth_value)}</div></td>
+      <td>${statusBadge(a)}</td>
+      <td><div class="mini-stats">请求 <b>${a.stats.total_requests||0}</b> · 成功 <b>${a.stats.success_count||0}</b><br>失败 <b>${a.stats.failure_count||0}</b> · 连续失败 <b>${a.stats.consecutive_failures||0}</b>${a.stats.last_error?`<br><span style="color:var(--danger);font-size:11px;">${esc(a.stats.last_error.slice(0,60))}</span>`:''}</div></td>
+      <td><div class="mini-stats">${fmtRel(a.stats.last_used_at)}${a.stats.last_success_at?`<br><span style="color:var(--success);">成功 ${fmtRel(a.stats.last_success_at)}</span>`:''}</div></td>
+      <td><div class="row-actions">
+        <button class="btn btn-ghost btn-sm" title="测试连通性" onclick="testAccount('${a.id}')">测试</button>
+        <button class="btn btn-ghost btn-sm" title="编辑" onclick="openEditModal('${a.id}')">编辑</button>
+        ${a.status!=='active'||!a.enabled?`<button class="btn btn-ghost btn-sm" title="重置为活跃" onclick="resetAccount('${a.id}')">重置</button>`:''}
+        <button class="btn btn-danger btn-sm" title="删除" onclick="deleteAccount('${a.id}','${esc(a.name)}')">删除</button>
+      </div></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- Account CRUD ---------- */
+let editCache = {};
+async function openAddModal() {
+  editCache = {};
+  showModal('添加账号', {
+    name:'', auth_type:'cookie', auth_value:'', note:'', enabled:true
+  }, false);
+}
+async function openEditModal(id) {
+  try {
+    const r = await fetchJson('/v1/accounts/pool/'+id);
+    editCache = r.account;
+    showModal('编辑账号', r.account, true);
+  } catch(e){ toast('加载失败: '+(e.message||e),'error'); }
+}
+
+function showModal(title, a, isEdit) {
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = `<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <div class="modal-head"><h3>${title}</h3><button class="btn-icon" onclick="closeModal()"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field full">
+            <label>名称 <span class="req">*</span></label>
+            <input id="f_name" class="input" value="${esc(a.name)}" placeholder="如：主账号 / 工作号">
+          </div>
+          <div class="field">
+            <label>认证方式</label>
+            <select id="f_auth_type" class="select">
+              <option value="cookie" ${a.auth_type==='cookie'?'selected':''}>Cookie (推荐)</option>
+              <option value="token" ${a.auth_type==='token'?'selected':''}>Personal Access Token</option>
+              <option value="session" ${a.auth_type==='session'?'selected':''}>Session Token</option>
+              <option value="oauth" ${a.auth_type==='oauth'?'selected':''}>OAuth Bearer</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>启用</label>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:400;padding-top:8px;">
+              <input type="checkbox" id="f_enabled" ${a.enabled?'checked':''}> 启用此账号
+            </label>
+          </div>
+          <div class="field full">
+            <label>认证值 <span class="req">*</span> ${isEdit?'<span style="color:var(--text-faint);font-weight:400;">(留空则不修改)</span>':''}</label>
+            <textarea id="f_auth_value" class="input" placeholder="${a.auth_type==='cookie'?'_gitlab_session=xxx; ...':'token 或 session 值'}">${esc(isEdit?'':a.auth_value)}</textarea>
+            <div class="hint">Cookie: 浏览器 F12 → Network → 请求头 Cookie 整行复制</div>
+          </div>
+          <div class="field full">
+            <label>备注</label>
+            <input id="f_note" class="input" value="${esc(a.note||'')}" placeholder="可选">
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+        <button class="btn btn-primary" id="saveAccBtn" onclick="saveAccount(${isEdit?'true':'false'}, '${esc(a.id||'')}')">保存</button>
+      </div>
+    </div></div>`;
+}
+
+function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+
+async function saveAccount(isEdit, id) {
+  const btn = document.getElementById('saveAccBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 保存中';
+  const body = {
+    name: document.getElementById('f_name').value.trim(),
+    auth_type: document.getElementById('f_auth_type').value,
+    auth_value: document.getElementById('f_auth_value').value.trim(),
+    note: document.getElementById('f_note').value.trim(),
+    enabled: document.getElementById('f_enabled').checked,
+  };
+  if (!body.name) { toast('请填写名称','error'); btn.disabled=false; btn.textContent='保存'; return; }
+  if (!isEdit && !body.auth_value) { toast('请填写认证值','error'); btn.disabled=false; btn.textContent='保存'; return; }
+  if (isEdit && !body.auth_value) delete body.auth_value;
+  try {
+    if (isEdit) await fetchJson('/v1/accounts/pool/'+id, { method:'PUT', body: JSON.stringify(body) });
+    else await fetchJson('/v1/accounts/pool', { method:'POST', body: JSON.stringify(body) });
+    toast(isEdit?'已更新':'已添加','success');
+    closeModal();
+    refreshAccounts();
+  } catch(e){ toast('保存失败: '+(e.message||e),'error'); btn.disabled=false; btn.textContent='保存'; }
+}
+
+async function deleteAccount(id, name) {
+  if (!confirm('确定删除账号「'+name+'」？此操作不可撤销。')) return;
+  try { await fetchJson('/v1/accounts/pool/'+id, {method:'DELETE'}); toast('已删除','success'); refreshAccounts(); }
+  catch(e){ toast('删除失败: '+(e.message||e),'error'); }
+}
+
+async function resetAccount(id) {
+  try { await fetchJson('/v1/accounts/pool/'+id+'/reset', {method:'POST'}); toast('已重置为活跃','success'); refreshAccounts(); }
+  catch(e){ toast('重置失败: '+(e.message||e),'error'); }
+}
+
+async function testAccount(id) {
+  toast('正在测试…','info');
+  try {
+    const r = await fetchJson('/v1/accounts/pool/'+id+'/test', {method:'POST'});
+    if (r.status==='ok') {
+      toast('测试成功: '+(r.user&&r.user.username?('@'+r.user.username):'OK'),'success');
+    } else if (r.status==='fail') {
+      toast('认证失败 (HTTP '+r.http_code+')','error');
+    } else {
+      toast('测试出错: '+(r.detail||''),'error');
+    }
+    refreshAccounts();
+  } catch(e){ toast('测试失败: '+(e.message||e),'error'); }
+}
+
+/* ---------- Settings ---------- */
+async function loadSettings() {
+  try {
+    const [cfg, info] = await Promise.all([
+      fetchJson('/v1/accounts/pool/config'),
+      fetchJson('/v1/accounts/info'),
+    ]);
+    document.getElementById('cfgStrategy').value = cfg.strategy||'round_robin';
+    document.getElementById('cfgCooldown').value = cfg.cooldown_seconds||60;
+    document.getElementById('cfgMaxFail').value = cfg.max_consecutive_failures||3;
+    document.getElementById('cfgInvalidAuth').checked = cfg.invalid_on_auth_error!==false;
+    document.getElementById('svcInfo').innerHTML = `
+      <div><b>协议版本:</b> ${esc(info.protocol_version||'-')}</div>
+      <div><b>GitLab 地址:</b> ${esc(info.base_url||'-')}</div>
+      <div><b>默认模型:</b> ${esc(info.default_model||'-')}</div>
+      <div><b>当前认证:</b> ${esc(info.auth_type||'-')} · ${esc(info.auth_value_preview||'***')}</div>
+      <div><b>CSRF Token:</b> ${info.csrf_token_set?'已获取':'未设置'}</div>
+      <div><b>可用模型:</b> ${(info.available_models||[]).map(m=>'<span class="tag" style="margin-right:4px;">'+esc(m)+'</span>').join('')}</div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);"><b>OpenAI 兼容端点:</b><br><code style="font-family:var(--mono);font-size:12px;">POST /v1/chat/completions</code></div>`;
+    // retry count isn't in pool config (it's server config), read from summary indirectly — leave default
+    document.getElementById('cfgRetry').value = 3;
+  } catch(e){ toast('加载设置失败: '+(e.message||e),'error'); }
+}
+
+async function saveSettings() {
+  const body = {
+    strategy: document.getElementById('cfgStrategy').value,
+    cooldown_seconds: parseInt(document.getElementById('cfgCooldown').value),
+    max_consecutive_failures: parseInt(document.getElementById('cfgMaxFail').value),
+    invalid_on_auth_error: document.getElementById('cfgInvalidAuth').checked,
+  };
+  try { await fetchJson('/v1/accounts/pool/config', {method:'PUT', body:JSON.stringify(body)}); toast('已保存','success'); }
+  catch(e){ toast('保存失败: '+(e.message||e),'error'); }
+}
+
+/* ---------- Chat ---------- */
+async function loadModels() {
+  try {
+    const r = await fetchJson('/v1/models');
+    models = (r.data||[]).map(m=>m.id);
+    const sel = document.getElementById('chatModel');
+    sel.innerHTML = models.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
+  } catch(e){ toast('模型列表加载失败','error'); }
+}
+
+function clearChat() {
+  document.getElementById('chatMessages').innerHTML = `<div class="chat-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><div>开始一段对话，消息将通过账号池自动选择账号发送</div></div>`;
+}
+
+function appendMsg(role, content) {
+  const box = document.getElementById('chatMessages');
+  const empty = box.querySelector('.chat-empty'); if (empty) empty.remove();
+  const div = document.createElement('div');
+  div.className = 'msg msg-'+(role==='user'?'user':'ai');
+  const avatar = role==='user'?'你':'G';
+  div.innerHTML = `<div class="msg-avatar">${avatar}</div><div class="msg-body"><div class="msg-role">${role==='user'?'你':'Assistant'}</div><div class="msg-content"></div></div>`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div.querySelector('.msg-content');
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.disabled = true; input.value=''; input.style.height='auto';
+  appendMsg('user', text);
+  const stream = document.getElementById('chatStream').checked;
+  const model = document.getElementById('chatModel').value;
+  const contentEl = appendMsg('ai', '');
+  let cursor = document.createElement('span'); cursor.className='msg-cursor'; contentEl.appendChild(cursor);
+  let acc = '';
+
+  try {
+    const res = await fetch(API + '/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'X-WebUI-Token': TOKEN },
+      body: JSON.stringify({ model, messages:[{role:'user',content:text}], stream }),
+    });
+    if (!res.ok) {
+      const t = await res.text(); throw new Error(t.slice(0,200));
+    }
+    if (stream && res.body) {
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, {stream:true});
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (payload === '[DONE]') continue;
+          try {
+            const j = JSON.parse(payload);
+            const delta = j.choices && j.choices[0] && j.choices[0].delta;
+            if (delta && delta.content) { acc += delta.content; }
+          } catch {}
+        }
+        renderContent(contentEl, acc, true);
+      }
+    } else {
+      const j = await res.json();
+      acc = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
+    }
+    if (cursor.parentNode) cursor.remove();
+    renderContent(contentEl, acc, false);
+    if (!acc) contentEl.innerHTML = '<span class="msg-error">(空回复)</span>';
+  } catch(e) {
+    if (cursor.parentNode) cursor.remove();
+    contentEl.innerHTML = '<span class="msg-error">[错误] '+esc(e.message||e)+'</span>';
+    toast('请求失败','error');
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+function renderContent(el, text, streaming) {
+  el.innerHTML = esc(text);
+  if (streaming) {
+    const c = document.createElement('span'); c.className='msg-cursor'; el.appendChild(c);
+    const box = document.getElementById('chatMessages'); box.scrollTop = box.scrollHeight;
+  }
+}
+
+/* auto-resize textarea */
+document.addEventListener('input', e => {
+  if (e.target.id==='chatInput') {
+    e.target.style.height='auto'; e.target.style.height = Math.min(e.target.scrollHeight, 140)+'px';
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.target.id==='chatInput' && e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  if (e.key==='Enter' && document.getElementById('loginView').classList.contains('hidden')===false && e.target.id==='loginToken') { doLogin(); }
+});
+
+/* ---------- Browser Login (Playwright stream) ---------- */
+let brwWS = null;
+let brwSid = null;
+let brwViewport = [1024, 680];
+
+async function openBrowserLogin() {
+  // reset UI
+  document.getElementById('brwOverlay').classList.remove('hidden');
+  document.getElementById('brwScreen').classList.add('loading');
+  document.getElementById('brwImg').src = '';
+  document.getElementById('brwUrlbar').classList.add('hidden');
+  document.getElementById('brwLoginBanner').classList.remove('show');
+  document.getElementById('brwSaveForm').classList.remove('show');
+  document.getElementById('brwAccName').value = '';
+  setStatus('connecting', '连接中…');
+
+  // check playwright availability + create session intent
+  let baseUrl = '';
+  try {
+    const r = await fetchJson('/v1/accounts/pool/assist/create', { method: 'POST', body: '{}' });
+    baseUrl = r.base_url || '';
+  } catch (e) {
+    setStatus('error', '服务器未安装 Playwright');
+    toast('服务器需要安装 Playwright: ' + (e.message||e), 'error');
+    return;
+  }
+
+  // open websocket
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${proto}//${location.host}/v1/accounts/pool/assist/ws?token=${encodeURIComponent(TOKEN)}`;
+  try {
+    brwWS = new WebSocket(wsUrl);
+  } catch (e) {
+    setStatus('error', 'WebSocket 创建失败');
+    return;
+  }
+  brwWS.onopen = () => {
+    brwWS.send(JSON.stringify({ type: 'start' }));
+    setStatus('live', '正在启动浏览器…');
+  };
+  brwWS.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.type === 'ready') {
+      brwSid = m.sid;
+      brwViewport = m.viewport || [1024, 680];
+      setStatus('live', '浏览器已就绪 · 请登录');
+    } else if (m.type === 'frame') {
+      const img = document.getElementById('brwImg');
+      img.src = 'data:image/jpeg;base64,' + m.data;
+      document.getElementById('brwScreen').classList.remove('loading');
+      const ub = document.getElementById('brwUrlbar');
+      if (m.url) { ub.textContent = m.url; ub.classList.remove('hidden'); }
+      if (m.logged_in) {
+        setStatus('win', '已登录');
+        document.getElementById('brwLoginBanner').classList.add('show');
+        document.getElementById('brwSaveForm').classList.add('show');
+      }
+    } else if (m.type === 'logged_in') {
+      setStatus('win', '已登录');
+      document.getElementById('brwLoginBanner').classList.add('show');
+      document.getElementById('brwSaveForm').classList.add('show');
+      toast('检测到登录成功，请填写名称保存', 'success');
+    } else if (m.type === 'error') {
+      setStatus('error', m.message || '错误');
+      toast('浏览器错误: ' + (m.message||''), 'error');
+    }
+  };
+  brwWS.onerror = () => { setStatus('error', '连接错误'); };
+  brwWS.onclose = () => { if (document.getElementById('brwOverlay').classList.contains('hidden')===false) setStatus('error', '连接已断开'); };
+}
+
+function setStatus(cls, text) {
+  const s = document.getElementById('brwStatus');
+  s.className = 'brw-status ' + cls;
+  document.getElementById('brwStatusText').textContent = text;
+}
+
+function closeBrowserLogin() {
+  if (brwWS) { try { brwWS.send(JSON.stringify({type:'close'})); brwWS.close(); } catch{} brwWS = null; }
+  brwSid = null;
+  document.getElementById('brwOverlay').classList.add('hidden');
+}
+
+function brwClick(e) {
+  if (!brwWS || brwWS.readyState !== 1) return;
+  const img = e.currentTarget;
+  const rect = img.getBoundingClientRect();
+  // map displayed coords → actual viewport coords
+  const x = Math.round((e.clientX - rect.left) / rect.width * brwViewport[0]);
+  const y = Math.round((e.clientY - rect.top) / rect.height * brwViewport[1]);
+  brwWS.send(JSON.stringify({ type:'click', x, y }));
+}
+
+function brwSendText() {
+  if (!brwWS || brwWS.readyState !== 1) return;
+  const inp = document.getElementById('brwTextInput');
+  const t = inp.value;
+  if (!t) return;
+  brwWS.send(JSON.stringify({ type:'type', text: t }));
+  inp.value = '';
+}
+
+function brwKey(k) {
+  if (!brwWS || brwWS.readyState !== 1) return;
+  brwWS.send(JSON.stringify({ type:'key', key: k }));
+}
+
+function brwScroll(dx, dy) {
+  if (!brwWS || brwWS.readyState !== 1) return;
+  brwWS.send(JSON.stringify({ type:'scroll', dx, dy }));
+}
+
+function brwReload() {
+  if (!brwWS || brwWS.readyState !== 1) return;
+  brwWS.send(JSON.stringify({ type:'reload' }));
+}
+
+async function brwSaveAccount() {
+  if (!brwSid) { toast('会话已失效', 'error'); return; }
+  const name = document.getElementById('brwAccName').value.trim();
+  if (!name) { toast('请填写账号名称', 'error'); return; }
+  const btn = document.getElementById('brwSaveBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 保存中';
+  try {
+    const r = await fetchJson('/v1/accounts/pool/assist/'+brwSid+'/save', { method:'POST', body: JSON.stringify({ name }) });
+    toast('账号已保存到池中', 'success');
+    closeBrowserLogin();
+    refreshAccounts();
+  } catch (e) {
+    toast('保存失败: ' + (e.message||e), 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '保存账号';
+  }
+}
+
+/* ---------- API Keys ---------- */
+async function refreshApiKeys() {
+  try {
+    const r = await fetchJson('/v1/api-keys');
+    renderApiKeys(r.keys||[]);
+  } catch(e){ toast('加载失败: '+(e.message||e),'error'); }
+}
+function renderApiKeys(keys) {
+  const box = document.getElementById('apiKeysTable');
+  if (!keys.length) {
+    box.innerHTML = `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><div>还没有密钥，点击右上角「生成密钥」</div></div>`;
+    return;
+  }
+  box.innerHTML = `<table class="table"><thead><tr>
+    <th>名称</th><th>前缀</th><th>状态</th><th>调用次数</th><th>最近使用</th><th>创建时间</th><th style="text-align:right;">操作</th>
+  </tr></thead><tbody>${keys.map(k=>`
+    <tr>
+      <td><span style="font-weight:600;">${esc(k.name)}</span></td>
+      <td style="font-family:var(--mono);font-size:11.5px;">${esc(k.prefix)}</td>
+      <td>${k.enabled?'<span class="badge badge-active"><span class="badge-dot"></span>启用</span>':'<span class="badge badge-disabled"><span class="badge-dot"></span>已吊销</span>'}</td>
+      <td><b>${k.request_count||0}</b></td>
+      <td>${fmtRel(k.last_used_at)}</td>
+      <td>${fmtTs(k.created_at)}</td>
+      <td><div class="row-actions">
+        ${k.enabled?`<button class="btn btn-danger btn-sm" onclick="revokeApiKey('${k.id}')">吊销</button>`:''}
+      </div></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+async function genApiKey() {
+  const name = prompt('密钥名称（如：我的ChatBox、OpenWebUI接入）');
+  if (!name) return;
+  try {
+    const r = await fetchJson('/v1/api-keys', { method:'POST', body: JSON.stringify({name}) });
+    const key = r.key;
+    await navigator.clipboard.writeText(key).catch(()=>{});
+    const msg = document.getElementById('modalRoot');
+    msg.innerHTML = `<div class="modal-overlay" onclick="this.remove();event.stopPropagation();">
+      <div class="modal" onclick="event.stopPropagation()" style="max-width:500px;">
+        <div class="modal-head"><h3>密钥已生成</h3></div>
+        <div class="modal-body">
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">已复制到剪贴板，请妥善保存，关闭后无法再次查看完整密钥。</div>
+          <div style="background:var(--surface-3);border-radius:var(--radius-sm);padding:12px 14px;font-family:var(--mono);font-size:12.5px;word-break:break-all;user-select:all;">${esc(key)}</div>
+          <div style="margin-top:12px;font-size:12px;color:var(--text-muted);">用法：<br><code style="background:var(--surface-3);padding:2px 6px;border-radius:3px;">Authorization: Bearer ${esc(key)}</code></div>
+        </div>
+        <div class="modal-foot"><button class="btn btn-primary" onclick="document.getElementById('modalRoot').innerHTML='';refreshApiKeys();">我已保存</button></div>
+      </div></div>`;
+    refreshApiKeys();
+  } catch(e){ toast('生成失败: '+(e.message||e),'error'); }
+}
+async function revokeApiKey(id) {
+  if (!confirm('确定要吊销此密钥？吊销后无法恢复，所有使用此密钥的客户端将立即失效。')) return;
+  try { await fetchJson('/v1/api-keys/'+id, {method:'DELETE'}); toast('已吊销','success'); refreshApiKeys(); }
+  catch(e){ toast('吊销失败: '+(e.message||e),'error'); }
+}
+
+/* boot */
+if (TOKEN) {
+  fetchJson('/v1/accounts/pool/summary').then(()=>enterApp()).catch(()=>{});
+}
+</script>
+</body>
+</html>

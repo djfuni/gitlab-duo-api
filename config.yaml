@@ -1,0 +1,78 @@
+# GitLab Duo Chat → OpenAI API Proxy 配置文件
+# =============================================
+
+server:
+  host: "0.0.0.0"
+  # 8080 被其他 Docker 服务占用，改用 8088
+  port: 8088
+  debug: false
+
+gitlab:
+  # GitLab 实例地址 (支持 gitlab.com 和私有化部署)
+  base_url: "https://gitlab.com"
+  
+  # ===== 认证配置 (重要!) =====
+  # 方式1: Cookie (推荐，从浏览器复制完整的 Cookie 字符串)
+  # 在浏览器 F12 → Network → 任选一个请求 → Request Headers → Cookie
+  auth_type: "cookie"
+  # 替换为你的实际 Cookie:
+  auth_value: "_gitlab_session=YOUR_SESSION_HERE; _gitlab_session_random=..."
+  
+  # 方式2: Personal Access Token
+  # auth_type: "token"
+  # auth_value: "glpat-xxxxxxxxxxxxxxxxxxxx"
+  
+  # 方式3: 仅 Session Token
+  # auth_type: "session"
+  # auth_value: "your_gitlab_session_token_only"
+  
+  # GraphQL 端点 (通常不需要修改)
+  graphql_endpoint: "/api/graphql"
+  
+  # 请求超时 (秒)
+  timeout: 120
+  
+  # 默认模型
+  default_model: "claude-opus-4.8"
+
+# ===== 账号池配置 =====
+# 账号池允许多个 GitLab 账号轮询使用，单个账号失败自动冷却并切换下一个。
+# 账号通过 WebUI (http://localhost:8088/web) 或 /v1/accounts/pool API 管理，
+# 持久化到 accounts.json。启动时若无 WebUI token 会自动生成并打印到日志。
+pool:
+  enabled: true
+  # 调度策略: round_robin (轮询) | random (随机) | least_used (最少使用)
+  strategy: "round_robin"
+  # 账号失败后的冷却秒数
+  cooldown_seconds: 60
+  # 连续失败多少次后进入冷却
+  max_failures: 3
+  # 单次请求最多重试多少个账号
+  retry_count: 3
+  # 认证错误(401/403)时直接标记账号为 invalid (而非仅冷却)
+  invalid_on_auth_error: true
+  # 允许无 Authorization 头的请求使用账号池 (false 则要求每个请求自带 auth)
+  allow_anonymous: true
+  # WebUI 管理令牌; 留空则启动时自动生成并打印到日志
+  webui_token: "duo-admin-2026"
+
+# 模型映射表 (OpenAI风格名称 → GitLab内部ID)
+models:
+  claude-opus-4.8:
+    id: "anthropic/claude-opus-4.8"
+    provider: "anthropic"
+  claude-sonnet-4:
+    id: "anthropic/claude-sonnet-4"
+    provider: "anthropic"
+  claude-haiku-3.5:
+    id: "anthropic/claude-haiku-3.5"
+    provider: "anthropic"
+  gpt-5.5:
+    id: "openai/gpt-5.5"
+    provider: "openai"
+  gitlab-duo:
+    id: "gitlab_duo"
+    provider: "gitlab"
+  duo-chat:
+    id: "duo_chat"
+    provider: "gitlab"

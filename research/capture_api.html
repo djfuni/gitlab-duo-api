@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head><title>GitLab Duo API Capturer</title></head>
+<body>
+<h1>GitLab Duo Chat Network Request Capturer</h1>
+<p>Open DevTools Console on GitLab page and paste this script BEFORE sending a message:</p>
+<pre id="script">
+// ===== GitLab Duo Chat API Interceptor =====
+// Paste this in browser console on gitlab.com before sending chat message
+(function() {
+  window.__gitlabApiCaptures = [];
+  
+  // Intercept fetch
+  const origFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const [url, options] = args;
+    const capture = {
+      url: typeof url === 'string' ? url : url.url,
+      method: options?.method || 'GET',
+      headers: {},
+      body: options?.body,
+      timestamp: new Date().toISOString()
+    };
+    
+    if (options?.headers) {
+      if (options.headers instanceof Headers) {
+        options.headers.forEach((v, k) => capture.headers[k] = v);
+      } else if (typeof options.headers === 'object') {
+        capture.headers = {...options.headers};
+      }
+    }
+    
+    // Check if it's an AI/chat related request
+    if (capture.url.includes('ai') || capture.url.includes('chat') || 
+        capture.url.includes('duo') || capture.url.includes('agent') ||
+        capture.url.includes('graphql')) {
+      console.log('[GITLAB-API-CAPTURE] Request:', JSON.stringify(capture, null, 2));
+      
+      const response = await origFetch.apply(this, args);
+      const clone = response.clone();
+      
+      try {
+        const contentType = clone.headers.get('content-type') || '';
+        if (contentType.includes('text/event-stream') || contentType.includes('application/json')) {
+          const text = await clone.text();
+          capture.responseStatus = response.status;
+          capture.responseHeaders = {};
+          clone.headers.forEach((v, k) => capture.responseHeaders[k] = v);
+          capture.responseBodyPreview = text.substring(0, 5000);
+          console.log('[GITLAB-API-CAPTURE] Response:', JSON.stringify(capture, null, 2));
+          window.__gitlabApiCaptures.push(capture);
+        }
+      } catch(e) {
+        console.error('[GITLAB-API-CAPTURE] Error reading response:', e);
+      }
+      
+      return response;
+    }
+    return origFetch.apply(this, args);
+  };
+  
+  // Intercept XMLHttpRequest
+  const origOpen = XMLHttpRequest.prototype.open;
+  const origSend = XMLHttpRequest.prototype.send;
+  const origSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+  
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    this._captureInfo = {url, method, headers: {}, timestamp: new Date().toISOString()};
+    return origOpen.apply(this, [method, url, ...rest]);
+  };
+  
+  XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+    if (this._captureInfo) this._captureInfo.headers[name] = value;
+    return origSetRequestHeader.apply(this, arguments);
+  };
+  
+  XMLHttpRequest.prototype.send = function(body) {
+    if (this._captureInfo) {
+      const info = this._captureInfo;
+      info.body = body;
+      
+      if (info.url.includes('ai') || info.url.includes('chat') || 
+          info.url.includes('duo') || info.url.includes('agent') ||
+          info.url.includes('graphql')) {
+        
+        this.addEventListener('load', function() {
+          info.responseStatus = this.status;
+          info.responseHeaders = {};
+          this.getAllResponseHeaders().split('\r\n').forEach(line => {
+            const idx = line.indexOf(':');
+            if (idx > 0) info.responseHeaders[line.substring(0, idx).trim()] = line.substring(idx+1).trim();
+          });
+          info.responseBodyPreview = this.responseText.substring(0, 5000);
+          console.log('[GITLAB-API-CAPTURE] XHR:', JSON.stringify(info, null, 2));
+          window.__gitlabApiCaptures.push(info);
+        });
+      }
+    }
+    return origSend.apply(this, arguments);
+  };
+  
+  console.log('%c[GitLab API Capturer] Active! Send a chat message now.', 'color: green; font-size: 14px');
+})();
+</pre>
+<p>To export captured data, run: <code>copy(JSON.stringify(window.__gitlabApiCaptures, null, 2))</code></p>
+</body>
+</html>
