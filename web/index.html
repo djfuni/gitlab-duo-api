@@ -314,9 +314,13 @@
         </div>
         <div class="topbar-actions">
           <span class="status-pill"><span class="status-dot" id="poolStatusDot"></span><span id="poolStatusText">就绪</span></span>
+          <button class="btn btn-ghost" onclick="openProxyAuth()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            真实浏览器登录
+          </button>
           <button class="btn btn-ghost" onclick="openBrowserLogin()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>
-            浏览器登录
+            内置浏览器登录
           </button>
           <button class="btn btn-primary" onclick="openAddModal()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -961,6 +965,11 @@ document.addEventListener('keydown', e => {
 let brwWS = null;
 let brwSid = null;
 let brwViewport = [1024, 680];
+
+function openProxyAuth() {
+  window.open('/auth/start?token=' + encodeURIComponent(TOKEN), '_blank');
+  toast('已在新窗口打开 GitLab 登录页，登录完成后可保存', 'info');
+}
 
 async function openBrowserLogin() {
   // reset UI

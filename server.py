@@ -42,7 +42,7 @@ from pathlib import Path
 
 try:
     from fastapi import FastAPI, Request, HTTPException, Header, Body, WebSocket, WebSocketDisconnect
-    from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, FileResponse
+    from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, FileResponse, RedirectResponse
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel, Field
@@ -1687,6 +1687,151 @@ async def api_keys_rename(key_id: str, request: Request):
 
 
 # ============================================================
+
+
+# ============================================================
+# 真实浏览器登录代理 (反向代理 gitlab.com 捕获 Cookie)
+# ============================================================
+
+# 待捕获的 session (sid -> captured cookies)
+_auth_sessions: Dict[str, Dict] = {}
+_auth_lock = asyncio.Lock()
+
+AUTH_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>GitLab 登录授权</title>
+<base href="__PROXY_BASE__/auth/proxy/">
+<style>
+  body{margin:0;font-family:-apple-system,sans-serif;}
+  .bar{display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:#1f1e1d;color:#f5f4ed;font-size:13px;}
+  .bar .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;}
+  .bar .dot.off{background:#6b6a65;} .bar .dot.on{background:#5a8f5a;}
+  .bar button{background:#d97757;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;}
+  iframe{width:100%;height:calc(100vh - 44px);border:none;}
+  .done{display:none;text-align:center;padding:60px;}
+  .done h2{color:#5a8f5a;}
+</style></head><body>
+<div class="bar">
+  <span><span id="dot" class="dot off"></span><span id="hint">正在连接 GitLab，请登录…</span></span>
+  <button id="saveBtn" style="display:none" onclick="doSave()">保存此账号</button>
+</div>
+<iframe id="frm" src="__PROXY_BASE__/auth/proxy/users/sign_in"></iframe>
+<section class="done" id="doneWrap"><h2>登录成功</h2><p>输入账号名称保存到账号池：</p>
+  <input id="accName" style="padding:8px;width:240px;margin:10px;" placeholder="账号名称"><br>
+  <button onclick="doSave()" style="background:#d97757;color:#fff;border:none;padding:10px 24px;border-radius:6px;cursor:pointer;">保存</button>
+</section>
+<script>
+var sid="__SID__";
+var token="__TOKEN__";
+var api="__PROXY_BASE__";
+var checked=0;
+setInterval(function(){
+  checked++;
+  fetch(api+'/auth/check?sid='+sid+'&token='+token).then(r=>r.json()).then(d=>{
+    if(d.logged_in){
+      document.getElementById('dot').className='dot on';
+      document.getElementById('hint').textContent='已登录 GitLab - 可以保存了';
+      document.getElementById('saveBtn').style.display='inline-block';
+    } else if(checked>2){
+      document.getElementById('hint').textContent='请在上方窗口中登录 GitLab';
+    }
+  });
+},5000);
+function doSave(){
+  var name=prompt('账号名称：');
+  if(!name)return;
+  fetch(api+'/auth/save?sid='+sid+'&token='+token,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
+    .then(r=>r.json()).then(d=>{
+      if(d.status==='ok'){document.getElementById('doneWrap').style.display='block';
+        document.querySelector('.bar').innerHTML='<span style="color:#5a8f5a;">已保存到账号池</span>';
+        setTimeout(function(){window.close();},3000);
+      }else{alert('保存失败: '+(d.error||d.detail));}
+    });
+}
+</script></body></html>"""
+
+
+async def _proxy_fetch(url: str, method: str, headers: Dict, body: bytes = b"") -> httpx.Response:
+    proxy_headers = {k: v for k, v in headers.items()
+                     if k.lower() not in ("host", "accept-encoding")}
+    proxy_headers["accept-encoding"] = "identity"
+    async with httpx.AsyncClient(timeout=30, follow_redirects=False, verify=False) as cl:
+        return await cl.request(method, url, headers=proxy_headers, content=body or None)
+
+
+@app.api_route("/auth/proxy/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def auth_proxy(request: Request, path: str, sid: str = "", token: str = ""):
+    if not secrets.compare_digest(token, config.webui_token):
+        raise HTTPException(status_code=401)
+    qs = f"?{request.url.query}" if request.url.query else ""
+    target = f"{config.gitlab_base_url.rstrip('/')}/{path}{qs}"
+    body = await request.body()
+    resp = await _proxy_fetch(target, request.method, dict(request.headers), body)
+    set_cookies = resp.headers.get_list("set-cookie")
+    if set_cookies:
+        async with _auth_lock:
+            session = _auth_sessions.setdefault(sid, {"cookies": {}, "logged": False, "url": ""})
+            for sc in set_cookies:
+                for part in sc.split(","):
+                    part = part.strip()
+                    if "=" in part:
+                        n, _, v = part.partition("=")
+                        n = n.strip(); v = v.split(";")[0].strip()
+                        session["cookies"][n] = v
+            if resp.status_code in (302, 303) and "location" in resp.headers:
+                loc = resp.headers["location"]
+                if "/dashboard" in loc and "/sign_in" not in loc:
+                    session["logged"] = True; session["url"] = loc
+    content_type = resp.headers.get("content-type", "")
+    if "text/html" in content_type and resp.status_code == 200:
+        html = resp.text
+        proxy_base = f"{request.url.scheme}://{request.url.netloc}"
+        base_tag = f'<base href="{proxy_base}/auth/proxy/">'
+        if "<head>" in html:
+            html = html.replace("<head>", f"<head>\n{base_tag}", 1)
+        elif "<html" in html:
+            html = html.replace("<html", f'<html>\n<head>{base_tag}</head>', 1)
+        return HTMLResponse(html, status_code=resp.status_code, headers=dict(resp.headers))
+    return HTMLResponse(resp.content, status_code=resp.status_code, headers=dict(resp.headers))
+
+
+@app.get("/auth/start")
+async def auth_start(token: str = ""):
+    if not secrets.compare_digest(token, config.webui_token):
+        raise HTTPException(status_code=401)
+    sid = uuid.uuid4().hex[:12]
+    proxy_base = f"http://{config.host}:{config.port}"
+    html = AUTH_HTML.replace("__SID__", sid).replace("__TOKEN__", token).replace("__PROXY_BASE__", proxy_base)
+    return HTMLResponse(html)
+
+
+@app.get("/auth/check")
+async def auth_check(sid: str, token: str = ""):
+    if not secrets.compare_digest(token, config.webui_token):
+        return {"logged_in": False}
+    async with _auth_lock:
+        s = _auth_sessions.get(sid, {})
+    return {"logged_in": s.get("logged", False)}
+
+
+@app.post("/auth/save")
+async def auth_save(sid: str, token: str = "", request: Request = None):
+    if not secrets.compare_digest(token, config.webui_token):
+        raise HTTPException(401)
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, detail="name required")
+    async with _auth_lock:
+        s = _auth_sessions.pop(sid, {})
+    cookies = s.get("cookies", {})
+    cookie_str = "; ".join(f"{n}={v}" for n, v in cookies.items())
+    if "_gitlab_session" not in cookie_str:
+        return {"status": "error", "error": "未检测到 _gitlab_session cookie"}
+    acc = await pool.add(name=name, auth_type="cookie", auth_value=cookie_str,
+                         note=f"proxy auth - {s.get('url','')}")
+    return {"status": "ok", "account": acc.to_dict(mask=True)}
+
+
 # WebUI (Claude-style)
 # ============================================================
 
