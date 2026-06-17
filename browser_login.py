@@ -60,7 +60,11 @@ class BrowserLoginSession:
         self.created_at = time.time()
 
     async def start(self, browser) -> None:
-        """在共享 browser 上创建 context + page。"""
+        """在共享 browser 上创建 context + page。
+
+        关键: 先访问 /dashboard/home（不登录会 302 到登录页），等 Cloudflare 挑战
+        自动清除(5-10s)后再标记 ready。这样后续登录表单 POST 不会被 CF 拦截。
+        """
         try:
             self._context = await browser.new_context(
                 viewport={"width": self.viewport[0], "height": self.viewport[1]},
@@ -75,8 +79,27 @@ class BrowserLoginSession:
             self.page = await self._context.new_page()
             self.page.on("framenavigated", self._on_nav)
             if not self.skip_nav:
-                await self.page.goto(self.base_url + GITLAB_SIGN_IN_PATH,
+                # 访问首页让 Cloudflare 先完成挑战 (不登录 → 302 到 sign_in)
+                await self.page.goto(self.base_url + "/dashboard/home",
                                      wait_until="domcontentloaded", timeout=30000)
+                # 等待 CF 挑战自动解除 (最多 15s, 每 1s 检查一次)
+                for i in range(15):
+                    await asyncio.sleep(1)
+                    u = self.page.url
+                    t = await self.page.title()
+                    if "sign_in" in u and "Just a moment" not in t and "请稍候" not in t:
+                        break
+                else:
+                    # 如果还在 CF 挑战页, 状态标记但允许继续 (用户可能手动等)
+                    logger.warning("[login] Cloudflare challenge did not clear after 15s, url=%s",
+                                   self.page.url)
+
+                # 确保到登录页
+                if "/users/sign_in" not in self.page.url:
+                    await self.page.goto(self.base_url + GITLAB_SIGN_IN_PATH,
+                                         wait_until="domcontentloaded", timeout=15000)
+                    await asyncio.sleep(2)
+
             self.current_url = self.page.url
             try:
                 self.title = await self.page.title()
