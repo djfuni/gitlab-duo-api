@@ -1759,9 +1759,14 @@ async def _proxy_fetch(url: str, method: str, headers: Dict, body: bytes = b"") 
 
 
 @app.api_route("/auth/proxy/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def auth_proxy(request: Request, path: str, sid: str = "", token: str = ""):
-    if not secrets.compare_digest(token, config.webui_token):
+async def auth_proxy(request: Request, path: str):
+    """反向代理 gitlab.com。用 cookie 里的 auth_sid 鉴权。"""
+    sid = request.cookies.get("auth_sid", "")
+    if not sid:
         raise HTTPException(status_code=401)
+    async with _auth_lock:
+        if sid not in _auth_sessions:
+            raise HTTPException(status_code=401, detail="session not found")
     qs = f"?{request.url.query}" if request.url.query else ""
     target = f"{config.gitlab_base_url.rstrip('/')}/{path}{qs}"
     body = await request.body()
@@ -1799,10 +1804,15 @@ async def auth_start(token: str = "", request: Request = None):
     if not secrets.compare_digest(token, config.webui_token):
         raise HTTPException(status_code=401)
     sid = uuid.uuid4().hex[:12]
+    # 创建空 session 并设 cookie 方便后续代理请求鉴权
+    async with _auth_lock:
+        _auth_sessions[sid] = {"cookies": {}, "logged": False, "url": ""}
     # 使用请求里的实际 host（而非 config 里的 0.0.0.0）
     proxy_base = f"{request.url.scheme}://{request.url.netloc}" if request else f"http://{config.host}:{config.port}"
     html = AUTH_HTML.replace("__SID__", sid).replace("__TOKEN__", token).replace("__PROXY_BASE__", proxy_base)
-    return HTMLResponse(html)
+    resp = HTMLResponse(html)
+    resp.set_cookie("auth_sid", sid, path="/", samesite="lax")
+    return resp
 
 
 @app.get("/auth/check")
