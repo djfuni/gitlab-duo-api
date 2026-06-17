@@ -1795,11 +1795,12 @@ async def auth_proxy(request: Request, path: str, sid: str = "", token: str = ""
 
 
 @app.get("/auth/start")
-async def auth_start(token: str = ""):
+async def auth_start(token: str = "", request: Request = None):
     if not secrets.compare_digest(token, config.webui_token):
         raise HTTPException(status_code=401)
     sid = uuid.uuid4().hex[:12]
-    proxy_base = f"http://{config.host}:{config.port}"
+    # 使用请求里的实际 host（而非 config 里的 0.0.0.0）
+    proxy_base = f"{request.url.scheme}://{request.url.netloc}" if request else f"http://{config.host}:{config.port}"
     html = AUTH_HTML.replace("__SID__", sid).replace("__TOKEN__", token).replace("__PROXY_BASE__", proxy_base)
     return HTMLResponse(html)
 
