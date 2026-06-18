@@ -297,6 +297,10 @@
       </button>
     </nav>
     <div class="nav-spacer"></div>
+    <button class="nav-item" onclick="checkUpdate()" id="updateBtn" title="检查 GitHub 更新">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      <span>检查更新</span>
+    </button>
     <button class="nav-item" onclick="logout()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       <span>退出登录</span>
@@ -314,13 +318,9 @@
         </div>
         <div class="topbar-actions">
           <span class="status-pill"><span class="status-dot" id="poolStatusDot"></span><span id="poolStatusText">就绪</span></span>
-          <button class="btn btn-ghost" onclick="openProxyAuth()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            真实浏览器登录
-          </button>
           <button class="btn btn-ghost" onclick="openBrowserLogin()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>
-            内置浏览器登录
+            浏览器登录
           </button>
           <button class="btn btn-primary" onclick="openAddModal()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -966,11 +966,6 @@ let brwWS = null;
 let brwSid = null;
 let brwViewport = [1024, 680];
 
-function openProxyAuth() {
-  window.open('/auth/start?token=' + encodeURIComponent(TOKEN), '_blank');
-  toast('已在新窗口打开 GitLab 登录页，登录完成后可保存', 'info');
-}
-
 async function openBrowserLogin() {
   // reset UI
   document.getElementById('brwOverlay').classList.remove('hidden');
@@ -1183,6 +1178,36 @@ async function revokeApiKey(id) {
   if (!confirm('确定要吊销此密钥？吊销后无法恢复，所有使用此密钥的客户端将立即失效。')) return;
   try { await fetchJson('/v1/api-keys/'+id, {method:'DELETE'}); toast('已吊销','success'); refreshApiKeys(); }
   catch(e){ toast('吊销失败: '+(e.message||e),'error'); }
+}
+
+/* ---------- 更新检测 ---------- */
+async function checkUpdate() {
+  const btn = document.getElementById('updateBtn');
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span class="spinner"></span>';
+  try {
+    const r = await fetchJson('/v1/system/update/check');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>检查更新</span>';
+    if (r.error) { toast('检查失败: '+r.error, 'error'); return; }
+    if (r.outdated) {
+      const msg = r.message ? '\\n'+r.message.slice(0,80) : '';
+      if (confirm('发现新版本\\n\\n本地: '+r.local.slice(0,12)+'...\\n远程: '+r.remote.slice(0,12)+'...'+msg+'\\n\\n是否立即更新并重启？')) {
+        doUpdate();
+      }
+    } else {
+      toast('已是最新版本', 'success');
+    }
+  } catch(e) { btn.innerHTML = '<span>检查更新</span>'; toast('检查失败', 'error'); }
+}
+async function doUpdate() {
+  try {
+    const r = await fetchJson('/v1/system/update/do', {method:'POST',body:'{}'});
+    if (r.status==='ok') {
+      toast('已更新并重启，3秒后刷新页面...', 'success');
+      setTimeout(() => location.reload(), 3000);
+    } else {
+      toast('更新失败: '+(r.output||'').slice(0,100), 'error');
+    }
+  } catch(e) { toast('更新失败: '+(e.message||e), 'error'); }
 }
 
 /* boot */

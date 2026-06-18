@@ -975,6 +975,18 @@ async def startup():
     dm = DataManager(db)
     logging.info("[db] SQLite initialized at %s", DB_PATH)
 
+    # 记录当前 commit（用于更新检测）
+    import subprocess, os
+    try:
+        r = subprocess.run(["git", "-C", str(Path(__file__).parent), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, timeout=10,
+                          env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        if r.returncode == 0:
+            _save_local_commit(r.stdout.strip())
+            logging.info("[update] local commit: %s", r.stdout.strip()[:12])
+    except Exception:
+        pass
+
     # Auto-generate a WebUI access token if none set
     if not config.webui_token:
         config.webui_token = secrets.token_urlsafe(16)
@@ -1697,162 +1709,81 @@ async def api_keys_rename(key_id: str, request: Request):
 
 # ============================================================
 
-
 # ============================================================
-# 真实浏览器登录代理 (反向代理 gitlab.com 捕获 Cookie)
+# GitHub 更新检测
 # ============================================================
 
-# 待捕获的 session (sid -> captured cookies)
-_auth_sessions: Dict[str, Dict] = {}
-_auth_lock = asyncio.Lock()
-
-AUTH_HTML = """<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>GitLab 登录授权</title>
-<base href="__PROXY_BASE__/auth/proxy/">
-<style>
-  body{margin:0;font-family:-apple-system,sans-serif;}
-  .bar{display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:#1f1e1d;color:#f5f4ed;font-size:13px;}
-  .bar .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;}
-  .bar .dot.off{background:#6b6a65;} .bar .dot.on{background:#5a8f5a;}
-  .bar button{background:#d97757;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;}
-  iframe{width:100%;height:calc(100vh - 44px);border:none;}
-  .done{display:none;text-align:center;padding:60px;}
-  .done h2{color:#5a8f5a;}
-</style></head><body>
-<div class="bar">
-  <span><span id="dot" class="dot off"></span><span id="hint">正在连接 GitLab，请登录…</span></span>
-  <button id="saveBtn" style="display:none" onclick="doSave()">保存此账号</button>
-</div>
-<iframe id="frm" src="__PROXY_BASE__/auth/proxy/users/sign_in"></iframe>
-<section class="done" id="doneWrap"><h2>登录成功</h2><p>输入账号名称保存到账号池：</p>
-  <input id="accName" style="padding:8px;width:240px;margin:10px;" placeholder="账号名称"><br>
-  <button onclick="doSave()" style="background:#d97757;color:#fff;border:none;padding:10px 24px;border-radius:6px;cursor:pointer;">保存</button>
-</section>
-<script>
-var sid="__SID__";
-var token="__TOKEN__";
-var api="__PROXY_BASE__";
-var checked=0;
-setInterval(function(){
-  checked++;
-  fetch(api+'/auth/check?sid='+sid+'&token='+token).then(r=>r.json()).then(d=>{
-    if(d.logged_in){
-      document.getElementById('dot').className='dot on';
-      document.getElementById('hint').textContent='已登录 GitLab - 可以保存了';
-      document.getElementById('saveBtn').style.display='inline-block';
-    } else if(checked>2){
-      document.getElementById('hint').textContent='请在上方窗口中登录 GitLab';
-    }
-  });
-},5000);
-function doSave(){
-  var name=prompt('账号名称：');
-  if(!name)return;
-  fetch(api+'/auth/save?sid='+sid+'&token='+token,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
-    .then(r=>r.json()).then(d=>{
-      if(d.status==='ok'){document.getElementById('doneWrap').style.display='block';
-        document.querySelector('.bar').innerHTML='<span style="color:#5a8f5a;">已保存到账号池</span>';
-        setTimeout(function(){window.close();},3000);
-      }else{alert('保存失败: '+(d.error||d.detail));}
-    });
-}
-</script></body></html>"""
+GITHUB_REPO = "djfuni/gitlab-duo-api"
+LOCAL_COMMIT_FILE = Path(__file__).parent / ".commit_hash"
 
 
-async def _proxy_fetch(url: str, method: str, headers: Dict, body: bytes = b"") -> httpx.Response:
-    proxy_headers = {k: v for k, v in headers.items()
-                     if k.lower() not in ("host", "accept-encoding")}
-    proxy_headers["accept-encoding"] = "identity"
-    async with httpx.AsyncClient(timeout=30, follow_redirects=False, verify=False) as cl:
-        return await cl.request(method, url, headers=proxy_headers, content=body or None)
+def _read_local_commit() -> str:
+    try:
+        return LOCAL_COMMIT_FILE.read_text().strip()
+    except Exception:
+        return "unknown"
 
 
-@app.api_route("/auth/proxy/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def auth_proxy(request: Request, path: str):
-    """反向代理 gitlab.com。用 cookie 里的 auth_sid 鉴权。"""
-    sid = request.cookies.get("auth_sid", "")
-    if not sid:
-        raise HTTPException(status_code=401)
-    async with _auth_lock:
-        if sid not in _auth_sessions:
-            raise HTTPException(status_code=401, detail="session not found")
-    qs = f"?{request.url.query}" if request.url.query else ""
-    target = f"{config.gitlab_base_url.rstrip('/')}/{path}{qs}"
-    body = await request.body()
-    resp = await _proxy_fetch(target, request.method, dict(request.headers), body)
-    set_cookies = resp.headers.get_list("set-cookie")
-    if set_cookies:
-        async with _auth_lock:
-            session = _auth_sessions.setdefault(sid, {"cookies": {}, "logged": False, "url": ""})
-            for sc in set_cookies:
-                for part in sc.split(","):
-                    part = part.strip()
-                    if "=" in part:
-                        n, _, v = part.partition("=")
-                        n = n.strip(); v = v.split(";")[0].strip()
-                        session["cookies"][n] = v
-            if resp.status_code in (302, 303) and "location" in resp.headers:
-                loc = resp.headers["location"]
-                if "/dashboard" in loc and "/sign_in" not in loc:
-                    session["logged"] = True; session["url"] = loc
-    content_type = resp.headers.get("content-type", "")
-    if "text/html" in content_type and resp.status_code == 200:
-        html = resp.text
-        proxy_base = f"{request.url.scheme}://{request.url.netloc}"
-        base_tag = f'<base href="{proxy_base}/auth/proxy/">'
-        if "<head>" in html:
-            html = html.replace("<head>", f"<head>\n{base_tag}", 1)
-        elif "<html" in html:
-            html = html.replace("<html", f'<html>\n<head>{base_tag}</head>', 1)
-        return HTMLResponse(html, status_code=resp.status_code, headers=dict(resp.headers))
-    return HTMLResponse(resp.content, status_code=resp.status_code, headers=dict(resp.headers))
+def _save_local_commit(h: str):
+    LOCAL_COMMIT_FILE.write_text(h)
 
 
-@app.get("/auth/start")
-async def auth_start(token: str = "", request: Request = None):
-    if not secrets.compare_digest(token, config.webui_token):
-        raise HTTPException(status_code=401)
-    sid = uuid.uuid4().hex[:12]
-    # 创建空 session 并设 cookie 方便后续代理请求鉴权
-    async with _auth_lock:
-        _auth_sessions[sid] = {"cookies": {}, "logged": False, "url": ""}
-    # 使用请求里的实际 host（而非 config 里的 0.0.0.0）
-    proxy_base = f"{request.url.scheme}://{request.url.netloc}" if request else f"http://{config.host}:{config.port}"
-    html = AUTH_HTML.replace("__SID__", sid).replace("__TOKEN__", token).replace("__PROXY_BASE__", proxy_base)
-    resp = HTMLResponse(html)
-    resp.set_cookie("auth_sid", sid, path="/", samesite="lax")
-    return resp
+@app.get("/v1/system/update/check")
+async def check_update(request: Request):
+    """比较本地与 GitHub 最新 commit。"""
+    await _require_webui(request)
+    local = _read_local_commit()
+    try:
+        async with httpx.AsyncClient(timeout=15) as cl:
+            resp = await cl.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/commits/main",
+                headers={"Accept": "application/vnd.github.v3+json",
+                         "User-Agent": "GitLab-Duo-Proxy"}
+            )
+            if resp.status_code != 200:
+                return {"local": local, "remote": "error", "outdated": False,
+                        "error": f"GitHub API {resp.status_code}"}
+            data = resp.json()
+            remote = data.get("sha", "unknown")
+            return {
+                "local": local, "remote": remote,
+                "outdated": remote != local and local != "unknown",
+                "message": data.get("commit", {}).get("message", "").split("\n")[0],
+                "author": data.get("commit", {}).get("author", {}).get("name", ""),
+                "date": data.get("commit", {}).get("author", {}).get("date", ""),
+            }
+    except Exception as e:
+        return {"local": local, "remote": "error", "outdated": False, "error": str(e)}
 
 
-@app.get("/auth/check")
-async def auth_check(sid: str, token: str = ""):
-    if not secrets.compare_digest(token, config.webui_token):
-        return {"logged_in": False}
-    async with _auth_lock:
-        s = _auth_sessions.get(sid, {})
-    return {"logged_in": s.get("logged", False)}
+@app.post("/v1/system/update/do")
+async def do_update(request: Request):
+    """Git pull + systemctl restart。"""
+    await _require_webui(request)
+    import subprocess, os
+    proj_dir = str(Path(__file__).parent)
+    try:
+        result = subprocess.run(
+            ["git", "-C", proj_dir, "pull", "origin", "main"],
+            capture_output=True, text=True, timeout=30, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        )
+        output = result.stdout + "\n" + result.stderr
+        if result.returncode != 0:
+            return {"status": "error", "output": output[:1000]}
+        # 记录新 commit
+        r2 = subprocess.run(
+            ["git", "-C", proj_dir, "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10
+        )
+        if r2.returncode == 0:
+            _save_local_commit(r2.stdout.strip())
+        # 重启服务
+        subprocess.run(["systemctl", "restart", "gitlab-duo-api"], timeout=10)
+        return {"status": "ok", "output": output[:1000], "message": "已更新并重启"}
+    except Exception as e:
+        return {"status": "error", "output": str(e)}
 
 
-@app.post("/auth/save")
-async def auth_save(sid: str, token: str = "", request: Request = None):
-    if not secrets.compare_digest(token, config.webui_token):
-        raise HTTPException(401)
-    body = await request.json()
-    name = (body.get("name") or "").strip()
-    if not name:
-        raise HTTPException(400, detail="name required")
-    async with _auth_lock:
-        s = _auth_sessions.pop(sid, {})
-    cookies = s.get("cookies", {})
-    cookie_str = "; ".join(f"{n}={v}" for n, v in cookies.items())
-    if "_gitlab_session" not in cookie_str:
-        return {"status": "error", "error": "未检测到 _gitlab_session cookie"}
-    acc = await pool.add(name=name, auth_type="cookie", auth_value=cookie_str,
-                         note=f"proxy auth - {s.get('url','')}")
-    return {"status": "ok", "account": acc.to_dict(mask=True)}
-
-
-# ============================================================
 # OpenAI Responses API (兼容 Codex / v2 端点)
 # ============================================================
 
@@ -2041,3 +1972,4 @@ if __name__ == "__main__":
     import uvicorn
     cfg = load_config()
     uvicorn.run(app, host=cfg.host, port=cfg.port)
+

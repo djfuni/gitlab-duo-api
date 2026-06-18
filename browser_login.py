@@ -418,34 +418,43 @@ class BrowserLoginSession:
 
         self.page.on("response", on_resp)
         try:
-            is_home = "/dashboard/home" in (self.current_url or "") or "/dashboard/" in (self.current_url or "")
-            if not is_home:
-                try:
+            # 如果页面已在 dashboard 且 chat 面板打开，跳过导航和 toggle
+            is_home = "/dashboard" in (self.current_url or "")
+            textarea = None
+            if is_home:
+                # 快速检查输入框是否已在 DOM 中（pinned session 通常已打开面板）
+                for sel in ["[data-testid='chat-prompt-input']", "textarea"]:
+                    try:
+                        el = await self.page.query_selector(sel)
+                        b = await el.bounding_box() if el else None
+                        if b and b.get("width", 0) > 60: textarea = el; break
+                    except Exception: continue
+
+            if not textarea:
+                # 需要完整导航流程
+                if not is_home:
                     await self.page.goto(self.base_url + "/dashboard/home",
                                          wait_until="domcontentloaded", timeout=30000)
-                except Exception: pass
-                await asyncio.sleep(2)
-
-            # 点开聊天面板
-            try:
-                toggle = await self.page.wait_for_selector('[data-testid="ai-chat-toggle"]', timeout=8000)
-                await toggle.click(); await asyncio.sleep(2)
-            except Exception:
-                logger.debug("[chat] ai-chat-toggle not found")
-
-            textarea = None
-            for sel in ["[data-testid='chat-prompt-input']", "textarea[placeholder*='work' i]",
-                        "textarea[aria-label*='Chat prompt' i]", "textarea"]:
+                    await asyncio.sleep(0.5)
+                # 点击聊天面板开关
                 try:
-                    el = await self.page.wait_for_selector(sel, timeout=5000)
-                    b = await el.bounding_box() if el else None
-                    if b and b.get("width", 0) > 60: textarea = el; break
-                except Exception: continue
+                    await self.page.click('[data-testid="ai-chat-toggle"]', timeout=6000)
+                    await asyncio.sleep(0.5)
+                except Exception:
+                    logger.debug("[chat] toggle not found")
+                # 找输入框
+                for sel in ["[data-testid='chat-prompt-input']", "textarea[placeholder*='work' i]",
+                            "textarea[aria-label*='Chat prompt' i]", "textarea"]:
+                    try:
+                        el = await self.page.wait_for_selector(sel, timeout=4000)
+                        b = await el.bounding_box() if el else None
+                        if b and b.get("width", 0) > 60: textarea = el; break
+                    except Exception: continue
             if textarea is None:
                 yield mk("[Proxy Error] 找不到 Duo Chat 输入框", finish="error")
                 yield "data: [DONE]\n\n"; return
 
-            await textarea.fill(prompt); await asyncio.sleep(0.3)
+            await textarea.fill(prompt); await asyncio.sleep(0.1)
             sent = False
             for sel in ['[aria-label="Send chat message."]', "[data-testid='ai-send-button']",
                         'button[aria-label*="Send" i]']:
@@ -486,7 +495,7 @@ class BrowserLoginSession:
                        "variables": {"workflowId": wid}}
             got_agent = False
             while time.time() < deadline:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
                 try:
                     async with httpx.AsyncClient(timeout=30, follow_redirects=True, verify=False) as cl:
                         r = await cl.post(self.base_url + "/api/graphql", json=payload, headers=headers)
