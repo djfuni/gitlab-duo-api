@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS users (
     id          TEXT PRIMARY KEY,
     username    TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role        TEXT DEFAULT 'user',   -- 'admin' | 'user'
-    created_at  REAL DEFAULT (unixepoch())
+    role        TEXT DEFAULT 'user',
+    created_at  REAL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS accounts (
@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     status      TEXT DEFAULT 'active',
     cooldown_until REAL DEFAULT 0,
     note        TEXT DEFAULT '',
-    created_at  REAL DEFAULT (unixepoch()),
-    stats       TEXT DEFAULT '{}'   -- JSON blob
+    created_at  REAL DEFAULT 0,
+    stats       TEXT DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     prefix      TEXT NOT NULL,
     enabled     INTEGER DEFAULT 1,
     request_count INTEGER DEFAULT 0,
-    created_at  REAL DEFAULT (unixepoch()),
+    created_at  REAL DEFAULT 0,
     last_used_at REAL DEFAULT 0,
     note        TEXT DEFAULT ''
 );
@@ -174,8 +174,8 @@ class DataManager:
     def create_user(self, username: str, password: str, role: str = "user") -> dict:
         uid = secrets.token_hex(10)
         self.db.execute(
-            "INSERT INTO users(id, username, password_hash, role) VALUES(?,?,?,?)",
-            uid, username, hash_password(password), role
+            "INSERT INTO users(id, username, password_hash, role, created_at) VALUES(?,?,?,?,?)",
+            uid, username, hash_password(password), role, time.time()
         )
         self.db.commit()
         return self.get_user(uid)
@@ -203,8 +203,8 @@ class DataManager:
                        auth_value: str, note: str = "") -> dict:
         aid = secrets.token_hex(10)
         self.db.execute(
-            "INSERT INTO accounts(id, user_id, name, auth_type, auth_value, note) VALUES(?,?,?,?,?,?)",
-            aid, user_id, name, auth_type, auth_value, note
+            "INSERT INTO accounts(id, user_id, name, auth_type, auth_value, note, created_at) VALUES(?,?,?,?,?,?,?)",
+            aid, user_id, name, auth_type, auth_value, note, time.time()
         )
         self.db.commit()
         return self.get_account(aid)
@@ -256,8 +256,8 @@ class DataManager:
         kid = kh[:12]
         prefix = raw[:14] + "..." + raw[-4:]
         self.db.execute(
-            "INSERT INTO api_keys(id, user_id, name, key_hash, prefix) VALUES(?,?,?,?,?)",
-            kid, user_id, name, kh, prefix
+            "INSERT INTO api_keys(id, user_id, name, key_hash, prefix, created_at) VALUES(?,?,?,?,?,?)",
+            kid, user_id, name, kh, prefix, time.time()
         )
         self.db.commit()
         return raw, self.get_api_key(kid)
