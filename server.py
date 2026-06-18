@@ -59,6 +59,7 @@ from account_pool import AccountPool, Account, SCHEDULE_STRATEGIES  # noqa: E402
 from browser_login import BrowserLoginManager, BrowserLoginSession  # noqa: E402
 from chat_driver import get_driver, close_driver  # noqa: E402
 from api_keys import ApiKeyManager  # noqa: E402
+from db import Database, DataManager, make_jwt, verify_jwt  # noqa: E402
 
 
 # ============================================================
@@ -925,16 +926,19 @@ client: Optional[GitLabDuoClientV2] = None
 pool: Optional[AccountPool] = None
 login_mgr: Optional[BrowserLoginManager] = None
 api_key_mgr: Optional[ApiKeyManager] = None
+dm: Optional[DataManager] = None
+db: Optional[Database] = None
 
-# Storage for the account pool
+# Storage
 POOL_STORAGE_PATH = Path(__file__).parent / "accounts.json"
 API_KEYS_STORAGE_PATH = Path(__file__).parent / "api_keys.json"
+DB_PATH = Path(__file__).parent / "data" / "duo.db"
 WEB_DIR = Path(__file__).parent / "web"
 
 
 @app.on_event("startup")
 async def startup():
-    global config, client, pool, login_mgr, api_key_mgr
+    global config, client, pool, login_mgr, api_key_mgr, dm, db
     config = load_config()
 
     # Auto-fetch CSRF token if not provided
@@ -962,9 +966,14 @@ async def startup():
     # Initialize browser login manager
     login_mgr = BrowserLoginManager(max_sessions=5, session_ttl=600)
 
-    # Initialize API key manager
+    # Initialize API key manager (legacy)
     api_key_mgr = ApiKeyManager(API_KEYS_STORAGE_PATH)
     await api_key_mgr.load()
+
+    # Initialize multi-user database
+    db = Database(DB_PATH)
+    dm = DataManager(db)
+    logging.info("[db] SQLite initialized at %s", DB_PATH)
 
     # Auto-generate a WebUI access token if none set
     if not config.webui_token:
@@ -1841,6 +1850,175 @@ async def auth_save(sid: str, token: str = "", request: Request = None):
     acc = await pool.add(name=name, auth_type="cookie", auth_value=cookie_str,
                          note=f"proxy auth - {s.get('url','')}")
     return {"status": "ok", "account": acc.to_dict(mask=True)}
+
+
+# ============================================================
+# OpenAI Responses API (兼容 Codex / v2 端点)
+# ============================================================
+
+class ResponsesRequest(BaseModel):
+    model: str = ""
+    input: Any = None          # str 或 [{role, content}, ...]
+    instructions: Optional[str] = None
+    stream: bool = False
+    temperature: Optional[float] = None
+    max_output_tokens: Optional[int] = None
+    top_p: Optional[float] = None
+
+
+@app.post("/v1/responses")
+async def responses_endpoint(req: ResponsesRequest, authorization: Optional[str] = Header(None)):
+    """OpenAI Responses API 兼容端点（用于 Codex 等 v2 客户端）。"""
+    # 转换为 Chat Completions 格式
+    messages = []
+    if isinstance(req.input, str):
+        if req.instructions:
+            messages.append(ChatMessage(role="system", content=req.instructions))
+        messages.append(ChatMessage(role="user", content=req.input))
+    elif isinstance(req.input, list):
+        for item in req.input:
+            if isinstance(item, dict):
+                messages.append(ChatMessage(
+                    role=item.get("role", "user"),
+                    content=item.get("content", "")
+                ))
+            elif isinstance(item, str):
+                messages.append(ChatMessage(role="user", content=item))
+
+    # 复用 Chat Completions 逻辑
+    chat_req = ChatCompletionRequest(
+        model=req.model,
+        messages=messages,
+        stream=req.stream,
+        temperature=req.temperature,
+        max_tokens=req.max_output_tokens,
+        top_p=req.top_p,
+    )
+    return await chat_completions(chat_req, authorization)
+
+
+# ============================================================
+# 用户系统 (多用户注册/登录)
+# ============================================================
+
+@app.post("/v1/auth/register")
+async def auth_register(request: Request):
+    body = await request.json()
+    username = (body.get("username") or "").strip()
+    password = (body.get("password") or "").strip()
+    if not username or not password:
+        raise HTTPException(400, "username and password required")
+    if len(password) < 6:
+        raise HTTPException(400, "password too short (min 6)")
+    try:
+        user = dm.create_user(username, password)
+        token = dm.login(username, password)
+        return {"status": "ok", "token": token, "user": {"id": user["id"], "username": user["username"]}}
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(409, "username already exists")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/v1/auth/login")
+async def auth_login(request: Request):
+    body = await request.json()
+    username = (body.get("username") or "").strip()
+    password = (body.get("password") or "").strip()
+    token = dm.login(username, password)
+    if not token:
+        raise HTTPException(401, "invalid username or password")
+    user = dm.get_user_by_username(username)
+    return {"status": "ok", "token": token, "user": {"id": user["id"], "username": user["username"]}}
+
+
+@app.get("/v1/auth/me")
+async def auth_me(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401)
+    user = dm.verify_token(authorization[7:])
+    if not user:
+        raise HTTPException(401)
+    return {"id": user["id"], "username": user["username"], "role": user["role"]}
+
+
+# ============================================================
+# 用户级账号管理 (取代旧的 pool CRUD)
+# ============================================================
+
+async def _get_user_from_auth(authorization: Optional[str]) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401)
+    user = dm.verify_token(authorization[7:])
+    if not user:
+        raise HTTPException(401)
+    return user
+
+
+@app.get("/v1/user/accounts")
+async def user_accounts_list(authorization: Optional[str] = Header(None)):
+    user = await _get_user_from_auth(authorization)
+    return {"accounts": dm.list_accounts(user["id"])}
+
+
+@app.post("/v1/user/accounts")
+async def user_accounts_add(request: Request, authorization: Optional[str] = Header(None)):
+    user = await _get_user_from_auth(authorization)
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    auth_type = (body.get("auth_type") or "cookie").strip()
+    auth_value = (body.get("auth_value") or "").strip()
+    if not name or not auth_value:
+        raise HTTPException(400, "name and auth_value required")
+    acc = dm.create_account(user["id"], name, auth_type, auth_value, body.get("note", ""))
+    return {"status": "ok", "account": acc}
+
+
+@app.put("/v1/user/accounts/{aid}")
+async def user_accounts_update(aid: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await _get_user_from_auth(authorization)
+    body = await request.json()
+    fields = {}
+    for k in ("name", "auth_type", "auth_value", "note", "enabled", "status"):
+        if k in body and body[k] is not None:
+            fields[k] = body[k]
+    if not fields:
+        raise HTTPException(400, "no fields to update")
+    acc = dm.update_account(aid, **fields)
+    if not acc:
+        raise HTTPException(404)
+    return {"status": "ok", "account": acc}
+
+
+@app.delete("/v1/user/accounts/{aid}")
+async def user_accounts_delete(aid: str, authorization: Optional[str] = Header(None)):
+    await _get_user_from_auth(authorization)
+    dm.delete_account(aid)
+    return {"status": "ok", "deleted": aid}
+
+
+@app.get("/v1/user/api-keys")
+async def user_apikeys_list(authorization: Optional[str] = Header(None)):
+    user = await _get_user_from_auth(authorization)
+    return {"keys": dm.list_api_keys(user["id"])}
+
+
+@app.post("/v1/user/api-keys")
+async def user_apikeys_create(request: Request, authorization: Optional[str] = Header(None)):
+    user = await _get_user_from_auth(authorization)
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    raw, key_info = dm.create_api_key(user["id"], name)
+    return {"status": "ok", "key": raw, "key_info": key_info}
+
+
+@app.delete("/v1/user/api-keys/{kid}")
+async def user_apikeys_revoke(kid: str, authorization: Optional[str] = Header(None)):
+    await _get_user_from_auth(authorization)
+    dm.revoke_api_key(kid)
+    return {"status": "ok", "revoked": kid}
 
 
 # WebUI (Claude-style)

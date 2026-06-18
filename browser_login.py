@@ -484,6 +484,7 @@ class BrowserLoginSession:
             deadline = time.time() + timeout
             payload = {"operationName": "getWorkflowLatestCheckpoint", "query": query,
                        "variables": {"workflowId": wid}}
+            got_agent = False
             while time.time() < deadline:
                 await asyncio.sleep(1.0)
                 try:
@@ -501,8 +502,12 @@ class BrowserLoginSession:
                     if mid in seen: continue
                     seen.add(mid)
                     if m.get("messageType") == "agent" and m.get("content"):
+                        got_agent = True
                         yield mk(m["content"])
-                if status in ("COMPLETED", "FINISHED", "FAILED", "ERROR"):
+                # 终态判断: COMPLETED/FINISHED/FAILED/ERROR 直接结束;
+                # INPUT_REQUIRED 表示 AI 已回复完等待下次输入, 也结束
+                if status in ("COMPLETED", "FINISHED", "FAILED", "ERROR") or \
+                   (got_agent and status == "INPUT_REQUIRED"):
                     errs = cp.get("errors", []) or []
                     if errs:
                         yield mk("[Proxy Error] " + "; ".join(map(str, errs)), finish="error")
