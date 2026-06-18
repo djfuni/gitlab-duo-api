@@ -423,44 +423,9 @@
       </div>
       <div class="content">
         <div class="panel">
-          <div class="panel-head"><h2>调度配置</h2></div>
-          <div class="panel-body">
-            <div class="form-grid">
-              <div class="field">
-                <label>调度策略</label>
-                <select id="cfgStrategy" class="select">
-                  <option value="round_robin">轮询 (round_robin)</option>
-                  <option value="random">随机 (random)</option>
-                  <option value="least_used">最少使用 (least_used)</option>
-                </select>
-                <div class="hint">账号池选取下一个可用账号的方式</div>
-              </div>
-              <div class="field">
-                <label>冷却秒数</label>
-                <input id="cfgCooldown" type="number" min="5" class="input" value="60">
-                <div class="hint">账号失败后进入冷却的时间</div>
-              </div>
-              <div class="field">
-                <label>最大连续失败次数</label>
-                <input id="cfgMaxFail" type="number" min="1" class="input" value="3">
-                <div class="hint">达到此次数后账号进入冷却</div>
-              </div>
-              <div class="field">
-                <label>单请求重试次数</label>
-                <input id="cfgRetry" type="number" min="1" class="input" value="3">
-                <div class="hint">发送失败时最多切换多少个账号</div>
-              </div>
-              <div class="field full">
-                <label>认证错误处理</label>
-                <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
-                  <input type="checkbox" id="cfgInvalidAuth"> 遇到 401/403 时直接标记账号为 invalid（而非仅冷却）
-                </label>
-              </div>
-            </div>
-            <div style="margin-top:16px;display:flex;gap:8px;">
-              <button class="btn btn-primary" onclick="saveSettings()">保存配置</button>
-              <button class="btn btn-ghost" onclick="loadSettings()">重置</button>
-            </div>
+          <div class="panel-head"><h2>服务信息</h2></div>
+          <div class="panel-body" id="svcInfo" style="font-size:13px;line-height:1.9;">
+            <div class="loading-row"><span class="spinner"></span> 加载中…</div>
           </div>
         </div>
 
@@ -749,25 +714,26 @@ function fmtRel(t) { if(!t) return '从未'; const s=Date.now()/1000-t; if(s<60)
 function renderAccounts(accs) {
   const box = document.getElementById('accountsTable');
   if (!accs.length) {
-    box.innerHTML = `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><div>还没有账号，点击右上角「添加账号」开始</div></div>`;
+    box.innerHTML = `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><div>还没有账号，点击右上角添加</div></div>`;
     return;
   }
   box.innerHTML = `<table class="table"><thead><tr>
-    <th>账号</th><th>认证</th><th>状态</th><th>调用统计</th><th>最近使用</th><th style="text-align:right;">操作</th>
-  </tr></thead><tbody>${accs.map(a=>`
-    <tr>
-      <td><div class="acc-name">${esc(a.name)} <span class="id">${a.id}</span></div>${a.note?`<div class="acc-note">${esc(a.note)}</div>`:''}</td>
-      <td><span class="tag">${esc(a.auth_type)}</span><div class="acc-auth">${esc(a.auth_value)}</div></td>
-      <td>${statusBadge(a)}</td>
-      <td><div class="mini-stats">请求 <b>${a.stats.total_requests||0}</b> · 成功 <b>${a.stats.success_count||0}</b><br>失败 <b>${a.stats.failure_count||0}</b> · 连续失败 <b>${a.stats.consecutive_failures||0}</b>${a.stats.last_error?`<br><span style="color:var(--danger);font-size:11px;">${esc(a.stats.last_error.slice(0,60))}</span>`:''}</div></td>
-      <td><div class="mini-stats">${fmtRel(a.stats.last_used_at)}${a.stats.last_success_at?`<br><span style="color:var(--success);">成功 ${fmtRel(a.stats.last_success_at)}</span>`:''}</div></td>
+    <th>账号</th><th>认证</th><th>状态</th><th>备注</th><th>创建时间</th><th style="text-align:right;">操作</th>
+  </tr></thead><tbody>${accs.map(a => {
+    const st = a.enabled ? (a.status||'active') : 'disabled';
+    const labels = {active:'活跃', cooldown:'冷却', disabled:'禁用', invalid:'失效'};
+    return `<tr>
+      <td><div class="acc-name">${esc(a.name)} <span class="id">${a.id.slice(0,8)}</span></div></td>
+      <td><span class="tag">${esc(a.auth_type)}</span> <span class="acc-auth">${esc(a.auth_value||'***')}</span></td>
+      <td><span class="badge badge-${st}"><span class="badge-dot"></span>${labels[st]||st}</span></td>
+      <td style="font-size:12px;color:var(--text-faint);">${esc(a.note||'—')}</td>
+      <td style="font-size:12px;color:var(--text-muted);">${a.created_at?fmtTs(a.created_at):'—'}</td>
       <td><div class="row-actions">
-        <button class="btn btn-ghost btn-sm" title="测试连通性" onclick="testAccount('${a.id}')">测试</button>
-        <button class="btn btn-ghost btn-sm" title="编辑" onclick="openEditModal('${a.id}')">编辑</button>
-        ${a.status!=='active'||!a.enabled?`<button class="btn btn-ghost btn-sm" title="重置为活跃" onclick="resetAccount('${a.id}')">重置</button>`:''}
-        <button class="btn btn-danger btn-sm" title="删除" onclick="deleteAccount('${a.id}','${esc(a.name)}')">删除</button>
+        <button class="btn btn-ghost btn-sm" onclick="openEditModal('${a.id}')">编辑</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteAccount('${a.id}','${esc(a.name)}')">删除</button>
       </div></td>
-    </tr>`).join('')}</tbody></table>`;
+    </tr>`;
+  }).join('')}</tbody></table>`;
 }
 
 function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -796,9 +762,12 @@ async function openAddModal() {
 }
 async function openEditModal(id) {
   try {
-    const r = await fetchJson('/v1/user/accounts/'+id);
-    editCache = r.account;
-    showModal('编辑账号', r.account, true);
+    const accs = await fetchJson('/v1/user/accounts');
+    const acc = (accs.accounts||[]).find(a => a.id === id);
+    if (!acc) { toast('账号不存在','error'); return; }
+    // 获取完整信息（列表里 auth_value 被 mask 了，编辑时留空即可）
+    editCache = acc;
+    showModal('编辑账号', {...acc, auth_value: ''}, true);
   } catch(e){ toast('加载失败: '+(e.message||e),'error'); }
 }
 
@@ -876,26 +845,8 @@ async function deleteAccount(id, name) {
   catch(e){ toast('删除失败: '+(e.message||e),'error'); }
 }
 
-async function resetAccount(id) {
-  try { await fetchJson('/v1/user/accounts/'+id+'/reset', {method:'POST'}); toast('已重置为活跃','success'); refreshAccounts(); }
-  catch(e){ toast('重置失败: '+(e.message||e),'error'); }
-}
-
-async function testAccount(id) {
+/* ---------- Chat ---------- */
   toast('正在测试…','info');
-  try {
-    const r = await fetchJson('/v1/user/accounts/'+id+'/test', {method:'POST'});
-    if (r.status==='ok') {
-      toast('测试成功: '+(r.user&&r.user.username?('@'+r.user.username):'OK'),'success');
-    } else if (r.status==='fail') {
-      toast('认证失败 (HTTP '+r.http_code+')','error');
-    } else {
-      toast('测试出错: '+(r.detail||''),'error');
-    }
-    refreshAccounts();
-  } catch(e){ toast('测试失败: '+(e.message||e),'error'); }
-}
-
 /* ---------- Settings ---------- */
 async function loadSettings() {
   try {
@@ -911,10 +862,6 @@ async function loadSettings() {
   } catch(e){ toast('加载失败: '+(e.message||e), 'error'); }
 }
 async function saveSettings() { toast('用户级配置通过 API 管理', 'info'); }
-;
-  try { await fetchJson('/v1/user/accounts/config', {method:'PUT', body:JSON.stringify(body)}); toast('已保存','success'); }
-  catch(e){ toast('保存失败: '+(e.message||e),'error'); }
-}
 
 /* ---------- Chat ---------- */
 async function loadModels() {
