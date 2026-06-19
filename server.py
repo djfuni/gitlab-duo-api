@@ -2032,6 +2032,10 @@ async def user_accounts_add(request: Request, authorization: Optional[str] = Hea
         raise HTTPException(400, "name and auth_value required")
     cookie_value = (body.get("cookie_value") or "").strip()
     acc = dm.create_account(user["id"], name, auth_type, auth_value, body.get("note", ""), cookie_value=cookie_value)
+    # 同步保存到账号池 (accounts.json)，供聊天引擎使用
+    if pool and (auth_type in ("cookie", "pat")):
+        await pool.add(name=name, auth_type=auth_type, auth_value=auth_value,
+                       note=body.get("note", ""), cookie_value=cookie_value)
     return {"status": "ok", "account": acc}
 
 

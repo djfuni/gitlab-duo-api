@@ -217,13 +217,14 @@ class AccountPool:
     # ---------------- CRUD ----------------
 
     async def add(self, name: str, auth_type: str, auth_value: str,
-                  note: str = "", enabled: bool = True) -> Account:
+                  note: str = "", enabled: bool = True, cookie_value: str = "") -> Account:
         async with self._lock:
             acc = Account(
                 id=uuid.uuid4().hex[:12],
                 name=name,
                 auth_type=auth_type,
                 auth_value=auth_value,
+                cookie_value=cookie_value,
                 note=note,
                 enabled=enabled,
             )
